@@ -102,35 +102,30 @@ void SCCInit(uintptr_t *addr)
   * if the addr ptr. is set then the calling node is a WORKER and just has to map the memory to a fixed start-address gotten from the MASTER
   *
   */
- if (*addr==0x0){ 
-	 PRT_DBG("MASTER MMAP\n\n");
- 	 local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, LOCAL_LUT << 24);
- 	 if (local == NULL) printf("Couldn't map memory!\n");
-	 else	munmap(local, SHM_MEMORY_SIZE);
- 	 local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
-  	if (local == NULL) printf("Couldn't map memory!\n");
-		
-
-
-
-	*addr=local;
+ if (*addr==0x0){
+		PRT_DBG("MASTER MMAP\n\n");
+		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, LOCAL_LUT << 24);
+		if (local == NULL) printf("Couldn't map memory!\n");
+		else	munmap(local, SHM_MEMORY_SIZE);
+		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
+		if (local == NULL) printf("Couldn't map memory!\n");
+		*addr=local;
   }else{
-	PRT_DBG("WORKER MMAP\n\n");
-	local=*addr;
-	local = mmap((void*)local,     	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
-	if (local == NULL) printf("Couldn't map memory!");
-
+		PRT_DBG("WORKER MMAP\n\n");
+		local=*addr;	
+		local = mmap((void*)local,     	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
+		if (local == NULL) printf("Couldn't map memory!");
   }  
 
-  PRT_DBG("addr:                                %p\n",*addr);
-  PRT_DBG("local:				%p\n",local);
+  PRT_DBG("addr: %p\n",*addr);
+  PRT_DBG("local: %p\n",local);
   PRT_DBG("MEMORY_OFFSET(node_ID): 	%u\n",MEMORY_OFFSET(node_ID)); 
 
   //calculate the start-address in the SHM, depending on the max. number of participating WORKERS and the ID of the calling WORKER
   freeList = local+MEMORY_OFFSET(node_ID);
   PRT_DBG("freelist address: 		%p\n",freeList);
-  	lut_addr_t *addr_t=(lut_addr_t*)malloc(sizeof(lut_addr_t));
-  	*addr_t= SCCPtr2Addr(freeList);
+  lut_addr_t *addr_t=(lut_addr_t*)malloc(sizeof(lut_addr_t));
+  *addr_t= SCCPtr2Addr(freeList);
   PRT_DBG("LUT-entry of freelist:		%d\n",addr_t->lut);
   PRT_DBG("freelist's LUT offset: 		%u\n",addr_t->offset);
 
@@ -167,7 +162,6 @@ void *SCCMallocPtr(size_t size)
 	pthread_mutex_lock(&malloc_lock);
 
   if (freeList == NULL) printf("Couldn't allocate memory!");
-
   prev = freeList;
   curr = prev->hdr.next;
   nunits = (size + sizeof(block_t) - 1) / sizeof(block_t) + 1;
@@ -177,35 +171,32 @@ void *SCCMallocPtr(size_t size)
  *  by a not allowed write to the SHM either by a normal malloc or a manual write to an address in the SHM
  */
 //    PRT_DBG("\ncurr->hdr.size:					%zu\n",curr->hdr.size);
-    if (curr->hdr.size >= nunits) {
-      if (curr->hdr.size == nunits) {
-      
-	  if (prev == curr){
-		PRT_DBG("SET prev TO NULL");
-		 prev = NULL;
-          }else{
-		 prev->hdr.next = curr->hdr.next;
-	  }
-      } else if (curr->hdr.size > nunits) {
-
-	new = curr + nunits;
-	*new = *curr;
-    new->hdr.size -= nunits;
-  	curr->hdr.size = nunits;
-
-        if (prev == curr) prev = new;
-	prev->hdr.next = new;
-      }
-      freeList = prev;
-	pthread_mutex_unlock(&malloc_lock);
-	return (void*) (curr + 1);
+			if (curr->hdr.size >= nunits) {
+					if (curr->hdr.size == nunits) {
+							if (prev == curr){
+									PRT_DBG("SET prev TO NULL in malloc\n");
+									prev = NULL;
+							}else{
+									prev->hdr.next = curr->hdr.next;
+							}
+					} else if (curr->hdr.size > nunits) {
+						new = curr + nunits;
+						*new = *curr;
+						new->hdr.size -= nunits;
+						curr->hdr.size = nunits;
+						if (prev == curr) prev = new;
+						prev->hdr.next = new;
+					}
+				freeList = prev;
+				pthread_mutex_unlock(&malloc_lock);
+				return (void*) (curr + 1);
      }
-  } while (curr != freeList && (prev = curr, curr = curr->hdr.next));
+		} while (curr != freeList && (prev = curr, curr = curr->hdr.next));
 
-  pthread_mutex_unlock(&malloc_lock);
+		pthread_mutex_unlock(&malloc_lock);
 
-  printf("Couldn't allocate memory!");
-  return NULL;
+		printf("Couldn't allocate memory!");
+		return NULL;
 }
 
 /*

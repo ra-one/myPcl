@@ -110,7 +110,8 @@ static pthread_once_t once_control = PTHREAD_ONCE_INIT;
 
 static void co_once_init(void)
 {
-	if (pthread_key_create(&key, free))
+	//if (pthread_key_create(&key, free))
+	if (pthread_key_create(&key, SCCFreePtr))
 		perror("creating TLS key");
 	else
 		valid_key++;
@@ -131,16 +132,19 @@ int co_thread_init(void)
 		return -1;
 	}
 	memset(tctx, 0, sizeof(*tctx));
+	PRT_DBG("1 inside pcl tctx->co_curr %p tctx->co_main %p key %d\n" ,tctx->co_curr,&tctx->co_main,key);
 	tctx->co_curr = &tctx->co_main;
+	PRT_DBG("2 inside pcl tctx->co_curr %p tctx->co_main %p key %d\n" ,tctx->co_curr,&tctx->co_main,key);
 	PRT_DBG("INSIDE CO_THREAD_INIT, tctx: %p\n",tctx);
-//	PRT_DBG("INSIDE CO_THREAD_INIT, tctx->co_curr: %p\n",tctx->co_curr);
+	PRT_DBG("INSIDE CO_THREAD_INIT, tctx->co_curr: %p\n",tctx->co_curr);
+
 	if (pthread_setspecific(key, tctx)) {
 		perror("setting thread context");
 		//free(tctx);
 		SCCFreePtr(tctx);
 		return -1;
 	}
-
+	PRT_DBG("3 inside pcl tctx->co_curr %p tctx->co_main %p key %d\n" ,tctx->co_curr,&tctx->co_main,key);
 	return 0;
 }
 

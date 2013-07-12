@@ -515,7 +515,7 @@ void co_exit(void)
 coroutine_t co_current(void)
 {
 	cothread_ctx *tctx = co_get_thread_ctx();
-
+	PRT_DBG("inside co_current tctx->co_curr %p \n" ,tctx->co_curr);
 	return (coroutine_t) tctx->co_curr;
 }
 
