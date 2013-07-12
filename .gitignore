@@ -1,0 +1,16 @@
+syntax: glob
+
+# vim temporaries
+.*.swp
+
+# gedit temporaries
+*~
+
+# object files
+*.o
+
+# dependencies
+.*.d
+
+# svn files
+.svn*
