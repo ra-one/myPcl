@@ -8,9 +8,24 @@ syntax: glob
 
 # object files
 *.o
+*.lo
+*.la
 
 # dependencies
 .*.d
 
-# svn files
-.svn*
+# Make files
+Makefile
+
+# deps and libs
+.deps/
+.libs/
+
+#config files
+config.*
+
+#tools
+libtool
+
+#misc
+stamp-h1
