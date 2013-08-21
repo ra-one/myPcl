@@ -25,8 +25,7 @@
 #include "pcl_config.h"
 #include "pcl.h"
 #include "pcl_private.h"
-#include "sccmalloc.h"
-#include "debugging.h"
+#include "scc.h"
 
 #if defined(CO_USE_SIGCONTEXT)
 #include <signal.h>
@@ -439,20 +438,13 @@ void co_call(coroutine_t coro)
 {
 	DCMflush(); 
 	cothread_ctx *tctx = co_get_thread_ctx();
-
-
-        coroutine *co = (coroutine *) coro, *oldco = tctx->co_curr;
-
-        co->caller = tctx->co_curr;
-        tctx->co_curr = co;
-
-
-        PRT_DBG("SWITCH CONTEXT NOW to coro: %p, co->ctx: %p\n",coro,co->ctx);
-
-        co_switch_context(&oldco->ctx, &co->ctx);
-
-        PRT_DBG("CONTEXT SWITCHED to coro: %p, co->ctx: %p\n",coro,co->ctx);
-        DCMflush();
+  coroutine *co = (coroutine *) coro, *oldco = tctx->co_curr;
+  co->caller = tctx->co_curr;
+  tctx->co_curr = co;
+  PRT_DBG("SWITCH CONTEXT NOW to coro: %p, co->ctx: %p\n",coro,co->ctx);
+  co_switch_context(&oldco->ctx, &co->ctx);
+  PRT_DBG("CONTEXT SWITCHED to coro: %p, co->ctx: %p\n",coro,co->ctx);
+  DCMflush();
 }
 
 

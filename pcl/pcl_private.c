@@ -26,8 +26,8 @@
 #include "pcl_config.h"
 #include "pcl.h"
 #include "pcl_private.h"
-#include "sccmalloc.h"
-#include "debugging.h"
+#include "scc.h"
+
 
 static cothread_ctx *co_get_global_ctx(void)
 {

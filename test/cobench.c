@@ -28,8 +28,7 @@
 #include <pthread.h>
 #include <pcl.h>
 #include <stdlib.h>
-#include <scc_comm_func.h>
-#include <sccmalloc.h>
+#include <scc.h>
 
 #define CO_STACK_SIZE (8 * 1024)
 
@@ -82,7 +81,7 @@ void *thread_proc()
 int main(int argc, char **argv)
 {
 
-	scc_init();
+	sccInit(0,2);
 	void* local=SCCGetlocal();
   	co_thread_init();
 	pthread_t *thid;
@@ -93,7 +92,7 @@ if (SccGetNodeID()==0){
 //	data1 = malloc(sizeof(int));
 //	data2 = malloc(sizeof(int));
 	data1 = SCCMallocPtr(sizeof(int));
-        data2 = SCCMallocPtr(sizeof(int));
+  data2 = SCCMallocPtr(sizeof(int));
 	*data1	= 1;
 	*data2	= 2;
 

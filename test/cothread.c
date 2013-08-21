@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <pcl.h>
-#include <scc_comm_func.h>
+#include <scc.h>
 /*
   Implements a simple cooperative multi-threading environment.
 
@@ -346,7 +346,7 @@ int main(int argc, char **argv)
 	int i, nthreads;
 	pthread_t *thids;
 
-	scc_init();
+	sccInit(0,2);
 
 	nthreads = 1;
 	for (i = 1; i < argc; i++) {
