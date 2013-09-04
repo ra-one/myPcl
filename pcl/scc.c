@@ -21,7 +21,7 @@ int node_location;
 int num_worker = -1;
 int master_ID = -1;
 
-void sccInit(int masterNode, int numWorkers){
+void SCCInit(int masterNode, int numWorkers){
   //variables for the MPB init
   int core,size;
   int x, y, z, address;
@@ -164,12 +164,21 @@ void sccInit(int masterNode, int numWorkers){
 }
 
 //--------------------------------------------------------------------------------------
-// FUNCTION: SccGetNodeID
+// FUNCTION: SCCGetNodeID
 //--------------------------------------------------------------------------------------
 // Returns node's ID
 //--------------------------------------------------------------------------------------
-int SccGetNodeID(void){
+int SCCGetNodeID(void){
 	return node_location;
+}
+
+//--------------------------------------------------------------------------------------
+// FUNCTION: SCCIsMaster
+//--------------------------------------------------------------------------------------
+// Returns 1 if node is master 0 otherwise
+//--------------------------------------------------------------------------------------
+int SCCIsMaster(void){
+	return (node_location == master_ID);
 }
 
 //--------------------------------------------------------------------------------------

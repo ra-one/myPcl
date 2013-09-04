@@ -9,7 +9,7 @@
 
 #include "scc.h"
 #include <pthread.h>
-
+//#define PRT_DBG printf
 //mutex variable used to lock SCCMallocPtr, because of the possibility of different threads running on the same core
 pthread_mutex_t malloc_lock;
 
@@ -65,7 +65,7 @@ void *SCCAddr2Ptr(lut_addr_t addr)
 
 void SCCMallocInit(uintptr_t *addr)
 {
-  node_ID= SccGetNodeID();
+  node_ID= SCCGetNodeID();
   // Open driver device "/dev/rckdyn011" to map memory in write-through mode 
   mem = open("/dev/rckdcm", O_RDWR|O_SYNC);
   PRT_DBG("mem: %i\n", mem);
