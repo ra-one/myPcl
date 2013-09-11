@@ -9,6 +9,7 @@
 
 //used to write SHM start address into MPB
 uintptr_t  addr=0x0;
+t_vcharp  mbox_start_addr=0x0;
 
 // global variables for the MPB, LUT, PINS, LOCKS and AIR
 t_vcharp mpbs[48];
@@ -20,6 +21,8 @@ AIR atomic_inc_regs[2*CORES];
 int node_location;
 int num_worker = -1;
 int master_ID = -1;
+
+
 
 void SCCInit(int masterNode, int numWorkers){
   //variables for the MPB init
@@ -161,6 +164,8 @@ void SCCInit(int masterNode, int numWorkers){
     memcpy((void*)mpbs[master_ID]+8, (const void*)&num_worker, sizeof(int));
   }
   FOOL_WRITE_COMBINE;
+  mbox_start_addr = M_START(node_location);
+  printf("scc.c mpbs %p, mbox_start_addr %p\n",mpbs[node_location],mbox_start_addr);
 }
 
 //--------------------------------------------------------------------------------------
@@ -219,6 +224,24 @@ void atomic_readR(AIR *reg, int *value)
 void atomic_writeR(AIR *reg, int value)
 {
   (*reg->init) = value;
+}
+
+//--------------------------------------------------------------------------------------
+// FUNCTION: cpy_mailbox_to_mpb
+//--------------------------------------------------------------------------------------
+// copy struct pointed by source to M_START and return M_START in dest
+//--------------------------------------------------------------------------------------
+void cpy_mailbox_to_mpb(void *dest,void *src, size_t size)
+{
+    memcpy_put((void*) mbox_start_addr, src, size);
+    dest = mbox_start_addr;
+    PRT_DBG("\n****************************mbox Cpy dest %p, start_addr %p\n\n",dest,mbox_start_addr);
+    PRT_DBG("memcpy_put: size %d copying at %p\n",size,mbox_start_addr);
+    //mbox_start_addr = (t_vcharp)((char*)mbox_start_addr + size);
+    mbox_start_addr += size;
+    FOOL_WRITE_COMBINE;
+    PRT_DBG("memcpy_put: mbox_start_addr after copy %p\n\n",mbox_start_addr);
+   
 }
 
 void cpy_mpb_to_mem(int node, void *dst, int size)

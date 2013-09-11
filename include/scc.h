@@ -35,6 +35,7 @@
 #define WRITING(i)          (*(mpbs[i] + B_OFFSET + 5))
 #define B_START             (B_OFFSET + 32)
 #define B_SIZE              (MPBSIZE - B_START)
+#define M_START(i)          (mpbs[i] + B_START + (*((volatile uint16_t *) (mpbs[i] + B_OFFSET + 2))));
 
 #define LUT(loc, idx)       (*((volatile uint32_t*)(&luts[loc][idx])))
 
@@ -47,6 +48,7 @@ extern int node_location;
 extern int master_ID;
 extern int num_worker;
 
+extern t_vcharp mbox_start_addr;
 
 extern t_vcharp mpbs[CORES];
 extern t_vcharp locks[CORES];
@@ -56,7 +58,7 @@ extern volatile uint64_t *luts[CORES];
 static inline int min(int x, int y) { return x < y ? x : y; }
 
 /* Flush MPBT from L1. */
-static inline void flush() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" ); }
+static inline void flush() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
 
 //static inline void lock(int core) { while (!(*locks[core] & 0x01)); }
 static inline void lock(int core) {
@@ -71,6 +73,7 @@ static inline void unlock(int core) { *locks[core] = 0;printf("core %d unlocked\
 
 void cpy_mpb_to_mem(int node, void *dst, int size);
 void cpy_mem_to_mpb(int node, void *src, int size);
+void cpy_mailbox_to_mpb(void *dest,void *src, size_t count);
 
 /*sync functions*/
 typedef volatile struct _AIR {

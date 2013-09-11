@@ -103,6 +103,7 @@ void SCCMallocInit(uintptr_t *addr)
   //calculate the start-address in the SHM, depending on the max. number of participating WORKERS and the ID of the calling WORKER
   freeList = local+MEMORY_OFFSET(node_ID);
   PRT_DBG("freelist address: %p\n",freeList);
+
   	
 	/*
   lut_addr_t *addr_t=(lut_addr_t*)malloc(sizeof(lut_addr_t));
@@ -136,20 +137,21 @@ void *SCCMallocPtr(size_t size)
 {
   size_t nunits;
   block_t *curr, *prev, *new;
-	PRT_DBG("SCCMallocPtr is called for size: %d\n",size);
 	pthread_mutex_lock(&malloc_lock);
 
-  if (freeList == NULL) printf("Couldn't allocate memory!");
+  if (freeList == NULL) printf("Couldn't allocate memory 1!\n");
   prev = freeList;
   curr = prev->hdr.next;
   nunits = (size + sizeof(block_t) - 1) / sizeof(block_t) + 1;
-
+  PRT_DBG("SCCMallocPtr is called for size: %zu, nunits %zu\n",size,nunits);
   do {
 		/* the following debugging printout is very useful to check if there is a Problem 
 		 * with the memory allocation, usually forced by a not allowed write to the SHM 
 		 * either by a normal malloc or a manual write to an address in the SHM
 		 */
-		 PRT_DBG("\ncurr->hdr.size:					%zu\n",curr->hdr.size);
+		 //PRT_DBG("\ncurr->hdr.size:					%zu\n",curr->hdr.size);
+     //size and next will always be same as there is only one element in free list
+     PRT_DBG("prev->hdr.size %zu,prev->hdr.next %p, curr->hdr.size %zu, curr->hdr.next %p\n",prev->hdr.size,prev->hdr.next,curr->hdr.size,curr->hdr.next);
 			if (curr->hdr.size >= nunits){
 				if (curr->hdr.size == nunits){
 					if (prev == curr){
@@ -174,15 +176,16 @@ void *SCCMallocPtr(size_t size)
 
 		pthread_mutex_unlock(&malloc_lock);
 
-		printf("Couldn't allocate memory!");
+		printf("Couldn't allocate memory 2!\n");
 		return NULL;
 }
 
 /*
  * SCCFreePtr is used to free memory in the SHM
  */
-
 void SCCFreePtr(void *p)
+{}
+void SCCFreePtr1(void *p)
 {
   block_t *block = (block_t*) p - 1,
           *curr = freeList;
