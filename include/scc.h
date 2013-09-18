@@ -60,16 +60,10 @@ static inline int min(int x, int y) { return x < y ? x : y; }
 /* Flush MPBT from L1. */
 static inline void flush() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
 
-//static inline void lock(int core) { while (!(*locks[core] & 0x01)); }
-static inline void lock(int core) {
- while (!(*locks[core] & 0x01)){
-    printf("L");fflush(stdout);
-    sleep(1);
- }
- printf("core %d locked\t\t",core);
-}
+static inline void lock(int core) { while (!(*locks[core] & 0x01)); }
 
-static inline void unlock(int core) { *locks[core] = 0;printf("core %d unlocked\n",core); }
+
+static inline void unlock(int core) { *locks[core] = 0; }
 
 void cpy_mpb_to_mem(int node, void *dst, int size);
 void cpy_mem_to_mpb(int node, void *src, int size);
@@ -85,8 +79,10 @@ extern AIR atomic_inc_regs[2*CORES];
 
 //void sccInit();
 void SCCInit(int masterNode, int numWorkers);
+void SCCStop();
 int  SCCGetNodeID();
 int  SCCIsMaster();
+double SCCGetTime();
 void atomic_incR(AIR *reg, int *value);
 void atomic_decR(AIR *reg, int value);
 void atomic_readR(AIR *reg, int *value);
@@ -108,6 +104,9 @@ void *SCCGetlocal(void);
 void *SCCGetLocalMemStart(void);
 void *SCCMallocPtr(size_t size);
 void SCCFreePtr(void *p);
+
+void SCCStartDynamicMode();
+int SCCIsDynamicMode();
 
 int DCMflush();
 

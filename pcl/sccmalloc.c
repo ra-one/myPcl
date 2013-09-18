@@ -39,7 +39,7 @@ lut_addr_t SCCPtr2Addr(void *p)
     offset = (p - local) % PAGE_SIZE;
     lut = LOCAL_LUT + (p - local) / PAGE_SIZE;
   } else {
-    printf("Invalid pointer\n");
+    fprintf(stderr, "Invalid pointer\n");
   }
 
   lut_addr_t result = {node_location, lut, offset};
@@ -53,7 +53,7 @@ void *SCCAddr2Ptr(lut_addr_t addr)
   if (LOCAL_LUT <= addr.lut && addr.lut < LOCAL_LUT + local_pages) {
     return (void*) ((addr.lut - LOCAL_LUT) * PAGE_SIZE + addr.offset + local);
   } else {
-    printf("Invalid SCC LUT address\n");
+    fprintf(stderr, "Invalid SCC LUT address\n");
   }
 
   return NULL;
@@ -67,10 +67,11 @@ void SCCMallocInit(uintptr_t *addr)
 {
   node_ID= SCCGetNodeID();
   // Open driver device "/dev/rckdyn011" to map memory in write-through mode 
-  mem = open("/dev/rckdcm", O_RDWR|O_SYNC);
+  //mem = open("/dev/rckdcm", O_RDWR|O_SYNC);
+  mem = open("/dev/rckdyn010", O_RDWR|O_SYNC);
   PRT_DBG("mem: %i\n", mem);
   if (mem < 0) {
-		printf("Opening /dev/rckdyn011 failed!\n");
+		fprintf(stderr, "Opening /dev/rckdyn011 failed!\n");
   }	
 
   /*
@@ -83,18 +84,18 @@ void SCCMallocInit(uintptr_t *addr)
 		PRT_DBG("MASTER MMAP\n\n");
 		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, LOCAL_LUT << 24);
 		
-		if (local == NULL) printf("Couldn't map memory!\n");
+		if (local == NULL) fprintf(stderr, "Couldn't map memory!\n");
 		else	munmap(local, SHM_MEMORY_SIZE);
 		
 		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
 		
-		if (local == NULL) printf("Couldn't map memory!\n");
+		if (local == NULL) fprintf(stderr, "Couldn't map memory!\n");
 		*addr=local;
   }else{
 		PRT_DBG("WORKER MMAP\n\n");
 		local=*addr;	
 		local = mmap((void*)local,     	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
-		if (local == NULL) printf("Couldn't map memory!");
+		if (local == NULL) fprintf(stderr, "Couldn't map memory!");
   }  
 
   PRT_DBG("addr: %p\nlocal: %p\nMEMORY_OFFSET(%d): %u\n",*addr,local,node_ID,MEMORY_OFFSET(node_ID));
@@ -125,7 +126,7 @@ void *SCCGetLocal(void){
 
 void SCCMallocStop(void)
 {
-  munmap(local, local_pages * PAGE_SIZE);
+  munmap(local, SHM_MEMORY_SIZE);
   close(mem);
 }
 
@@ -139,7 +140,7 @@ void *SCCMallocPtr(size_t size)
   block_t *curr, *prev, *new;
 	pthread_mutex_lock(&malloc_lock);
 
-  if (freeList == NULL) printf("Couldn't allocate memory 1!\n");
+  if (freeList == NULL) fprintf(stderr, "Couldn't allocate memory freelist is NULL!\n");
   prev = freeList;
   curr = prev->hdr.next;
   nunits = (size + sizeof(block_t) - 1) / sizeof(block_t) + 1;
@@ -170,13 +171,14 @@ void *SCCMallocPtr(size_t size)
 				}
 				freeList = prev;
 				pthread_mutex_unlock(&malloc_lock);
+        //printf("SCCMalloc: returned %p at time: %f of size: %d\n",(void*) (curr + 1),SCCGetTime(),size);
 				return (void*) (curr + 1);
 			}
 		} while (curr != freeList && (prev = curr, curr = curr->hdr.next));
 
 		pthread_mutex_unlock(&malloc_lock);
 
-		printf("Couldn't allocate memory 2!\n");
+		fprintf(stderr, "Couldn't allocate memory: not enough available!\n");
 		return NULL;
 }
 

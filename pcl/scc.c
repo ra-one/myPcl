@@ -21,8 +21,10 @@ AIR atomic_inc_regs[2*CORES];
 int node_location;
 int num_worker = -1;
 int master_ID = -1;
+int dynamicMode = 0;
 
-
+//variables for the AIR init
+int *air_baseE, *air_baseF;
 
 void SCCInit(int masterNode, int numWorkers){
   //variables for the MPB init
@@ -31,9 +33,6 @@ void SCCInit(int masterNode, int numWorkers){
   unsigned char cpu;
 
   unsigned char num_pages;
-
-  //variables for the AIR init
-  int *air_baseE, *air_baseF;
 
   InitAPI(0);
 
@@ -166,6 +165,59 @@ void SCCInit(int masterNode, int numWorkers){
   FOOL_WRITE_COMBINE;
   mbox_start_addr = M_START(node_location);
   printf("scc.c mpbs %p, mbox_start_addr %p\n",mpbs[node_location],mbox_start_addr);
+}
+
+void SCCStop(){
+  unsigned char cpu;
+  
+  FreeConfigReg((int*) air_baseE);
+  FreeConfigReg((int*) air_baseF);  
+  
+  for (cpu = 0; cpu < 48; cpu++){
+    FreeConfigReg((int*) irq_pins[cpu]);
+    FreeConfigReg((int*) locks[cpu]);
+    FreeConfigReg((int*) luts[cpu]);
+    MPBunalloc(&mpbs[cpu]);
+  }
+  SCCMallocStop();
+}
+
+static inline unsigned long long gtsc(void)
+{
+   unsigned int lo, hi;
+   lo = ReadConfigReg(FPGA_BASE+0x08224);
+   hi = ReadConfigReg(FPGA_BASE+0x8228);
+   return (unsigned long long)hi << 32 | lo;
+   //return (unsigned long long) ReadConfigReg(FPGA_BASE+0x8228) << 32 | ReadConfigReg(FPGA_BASE+0x08224);
+}
+
+double SCCGetTime()
+{ 
+  // this is to generate time based on 125MHz system clock og the FPGA
+  return ( ((double)gtsc())/(0.125*1.e9));
+  // this is to generate time for 533 MHz clock
+  //return ( ((double)gtsc())/(0.533*1.e9));
+}
+
+//--------------------------------------------------------------------------------------
+// FUNCTION: does not need anymore to create dynamic task in snet/lpel
+//--------------------------------------------------------------------------------------
+void SCCStartDynamicMode(){
+  int i = 1;
+	memcpy((void*)mpbs[master_ID]+32, (const void*)&i, sizeof(int));
+  FOOL_WRITE_COMBINE;
+  flush();
+  dynamicMode = 1; 
+}
+
+int SCCIsDynamicMode(){
+  if (dynamicMode != 1){
+   int i = -1;
+   flush();
+   memcpy((void*)&i, (const void*)mpbs[master_ID]+32, sizeof(int));
+   if (i == 1) dynamicMode = i;
+  }
+  return dynamicMode;
 }
 
 //--------------------------------------------------------------------------------------
