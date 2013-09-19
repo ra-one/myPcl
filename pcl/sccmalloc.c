@@ -107,7 +107,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   } else {
     freeList = local+MEMORY_OFFSET(node_ID);
   }
-  PRT_DBG("freelist address: %p\n",freeList);
+  PRT_DBG("sccmalloc: freelist address: %p\n",freeList);
   	
 	/*
   lut_addr_t *addr_t=(lut_addr_t*)malloc(sizeof(lut_addr_t));
@@ -174,7 +174,7 @@ void *SCCMallocPtr(size_t size)
 				}
 				freeList = prev;
 				pthread_mutex_unlock(&malloc_lock);
-        //printf("SCCMalloc: returned %p at time: %f of size: %d\n",(void*) (curr + 1),SCCGetTime(),size);
+        //printf("SCCMalloc: returned %p at time: %f of size: %d 0x%x\n",(void*) (curr + 1),SCCGetTime(),size,size);
 				return (void*) (curr + 1);
 			}
 		} while (curr != freeList && (prev = curr, curr = curr->hdr.next));

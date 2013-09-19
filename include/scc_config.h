@@ -25,6 +25,7 @@
 
 typedef volatile unsigned int         tVUINT32;
 
+/*
 // #########################################################################################
 //  ____                  _           _
 // / ___| _   _ _ __ ___ | |__   ___ | |___
@@ -34,15 +35,16 @@ typedef volatile unsigned int         tVUINT32;
 //        |___/
 // 
 // #########################################################################################
-
+*/
 // En-/ or disable debug prints...
 #define DEBUG 0
-
+/*
 // Define start address of pagetable (PAGE_DIR_BASE should be equal to or above to STACK_TOP setting 
 // in "../../bootcode/bootImage/defines.h" and needs to be 1025*4KB below the max private address) 
 // and the number of available private slots... E.g.:
 // Private space for 2 cores on 1GB of memory (MCEMU single node): 0x00000000 to 0x29ffffffff (30 slots = 480MB)
 // Private space for 8 cores on 1GB of memory (MCEMU multi  node): 0x00000000 to 0x05ffffffff ( 6 slots =  96MB)
+*/
 #define PRIV_SLOTS 6
 #define PAGE_DIR_BASE 0x04B00000
 

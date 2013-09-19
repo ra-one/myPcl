@@ -169,7 +169,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper){
   for (i=0; i < num_mailboxes;i++){
     allMbox[i] = (void*)temp;
     temp = (void*)temp + 48;
-    printf("scc.c: allMbox[%d] %p\n",i,allMbox[i]);
+    //printf("scc.c: allMbox[%d] %p\n",i,allMbox[i]);
   }
   
   //unlock all workers
