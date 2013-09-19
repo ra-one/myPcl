@@ -9,6 +9,7 @@
 
 //used to write SHM start address into MPB
 uintptr_t  addr=0x0;
+uintptr_t  *allMbox;
 t_vcharp  mbox_start_addr=0x0;
 
 // global variables for the MPB, LUT, PINS, LOCKS and AIR
@@ -20,13 +21,15 @@ AIR atomic_inc_regs[2*CORES];
 
 int node_location;
 int num_worker = -1;
+int num_wrapper = -1;
+int num_mailboxes = -1;
 int master_ID = -1;
 int dynamicMode = 0;
 
 //variables for the AIR init
 int *air_baseE, *air_baseF;
 
-void SCCInit(int masterNode, int numWorkers){
+void SCCInit(int masterNode, int numWorkers, int numWrapper){
   //variables for the MPB init
   int core,size;
   int x, y, z, address;
@@ -38,6 +41,8 @@ void SCCInit(int masterNode, int numWorkers){
 
   num_worker = numWorkers;
   master_ID = masterNode;
+  num_wrapper = numWrapper;
+  num_mailboxes = num_worker + num_wrapper;
 	 
   z = ReadConfigReg(CRB_OWN+MYTILEID);
   x = (z >> 3) & 0x0f; // bits 06:03
@@ -109,8 +114,6 @@ void SCCInit(int masterNode, int numWorkers){
    * therefore change it back to the version above but don't forget to check if the mapping above is correct
    */
 	num_pages=0;
-	i=1;
-	lut=0;
 	for (i = 1; i < CORES / num_worker && num_pages < max_pages; i++) {
     for (lut = 0; lut < PAGES_PER_CORE && num_pages < max_pages; lut++) {
       LUT(node_location, PAGES_PER_CORE + num_pages++) = LUT(i * num_worker, lut);
@@ -137,8 +140,8 @@ void SCCInit(int masterNode, int numWorkers){
   *
   */
   if(node_location == master_ID){
-    SCCMallocInit((void *)&addr);
-    PRT_DBG1("addr: %p\n",addr);
+    SCCMallocInit((void *)&addr,num_mailboxes);
+    PRT_DBG1("addr: %p\n",(void*)addr);
     memcpy((void*)mpbs[master_ID]+16, (const void*)&addr, sizeof(uintptr_t));
     //memcpy((void*)mpbs[master_ID]+8, (const void*)&num_worker, sizeof(int));
     //cpy_mem_to_mpb(0, (void *)&addr, sizeof(uintptr_t));	
@@ -152,19 +155,29 @@ void SCCInit(int masterNode, int numWorkers){
     //cpy_mpb_to_mem(0, (void *)&addr, sizeof(uintptr_t));
     //cpy_mem_to_mpb(0, (void *)&addr, sizeof(uintptr_t));
     memcpy((void*)&addr, (const void*)mpbs[master_ID]+16, sizeof(uintptr_t));
-    PRT_DBG1("addr: %p\n",addr);
-    SCCMallocInit((void *)&addr);
+    PRT_DBG1("addr: %p\n",(void*)addr);
+    SCCMallocInit((void *)&addr,num_mailboxes);
   }
 
   //***********************************************
   //FOOL_WRITE_COMBINE;
   unlock(node_location);
+  
+  //assign mailbox address into array
+  allMbox = SCCMallocPtr (sizeof(uintptr_t)*num_mailboxes);  
+  uintptr_t temp = addr;
+  for (i=0; i < num_mailboxes;i++){
+    allMbox[i] = (void*)temp;
+    temp = (void*)temp + 48;
+    printf("scc.c: allMbox[%d] %p\n",i,allMbox[i]);
+  }
+  
+  //unlock all workers
   if(node_location == master_ID){
     memcpy((void*)mpbs[master_ID]+8, (const void*)&num_worker, sizeof(int));
   }
   FOOL_WRITE_COMBINE;
-  mbox_start_addr = M_START(node_location);
-  printf("scc.c mpbs %p, mbox_start_addr %p\n",mpbs[node_location],mbox_start_addr);
+  mbox_start_addr = M_START(node_location);	
 }
 
 void SCCStop(){

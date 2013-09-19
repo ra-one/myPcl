@@ -63,7 +63,7 @@ void *SCCAddr2Ptr(lut_addr_t addr)
  * SCCMallocInit creates a new mapping for the SHM and sets the "addr" pointer to the beginning address of this SHM
  */
 
-void SCCMallocInit(uintptr_t *addr)
+void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 {
   node_ID= SCCGetNodeID();
   // Open driver device "/dev/rckdyn011" to map memory in write-through mode 
@@ -102,9 +102,12 @@ void SCCMallocInit(uintptr_t *addr)
   
 
   //calculate the start-address in the SHM, depending on the max. number of participating WORKERS and the ID of the calling WORKER
-  freeList = local+MEMORY_OFFSET(node_ID);
+  if(node_ID == 0){
+    freeList = local+(48*numMailboxes);
+  } else {
+    freeList = local+MEMORY_OFFSET(node_ID);
+  }
   PRT_DBG("freelist address: %p\n",freeList);
-
   	
 	/*
   lut_addr_t *addr_t=(lut_addr_t*)malloc(sizeof(lut_addr_t));

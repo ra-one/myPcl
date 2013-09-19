@@ -47,6 +47,8 @@
 extern int node_location;
 extern int master_ID;
 extern int num_worker;
+extern int num_mailboxes;
+extern uintptr_t  *allMbox;
 
 extern t_vcharp mbox_start_addr;
 
@@ -78,7 +80,7 @@ typedef volatile struct _AIR {
 extern AIR atomic_inc_regs[2*CORES];
 
 //void sccInit();
-void SCCInit(int masterNode, int numWorkers);
+void SCCInit(int masterNode, int numWorkers, int numWrapper);
 void SCCStop();
 int  SCCGetNodeID();
 int  SCCIsMaster();
@@ -98,7 +100,7 @@ typedef struct {
 lut_addr_t SCCPtr2Addr(void *p);
 void *SCCAddr2Ptr(lut_addr_t addr);
 
-void SCCMallocInit(uintptr_t  *addr);
+void SCCMallocInit(uintptr_t *addr,int numMailboxes);
 void SCCMallocStop(void);
 void *SCCGetlocal(void);
 void *SCCGetLocalMemStart(void);
