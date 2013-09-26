@@ -10,6 +10,8 @@
 #include "scc.h"
 #include <pthread.h>
 //#define PRT_DBG printf
+//#define PRT_DBG1 printf
+
 //mutex variable used to lock SCCMallocPtr, because of the possibility of different threads running on the same core
 pthread_mutex_t malloc_lock;
 
@@ -28,6 +30,7 @@ static void *local;
 static int mem;
 static block_t *freeList;
 
+uintptr_t start;
 /*
  * returns the LUT-entry where an address is located in the SHM
  */
@@ -65,7 +68,7 @@ void *SCCAddr2Ptr(lut_addr_t addr)
 
 void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 {
-  node_ID= SCCGetNodeID();
+  node_ID = SCCGetNodeRank(); //get logical id
   // Open driver device "/dev/rckdyn011" to map memory in write-through mode 
   //mem = open("/dev/rckdcm", O_RDWR|O_SYNC);
   mem = open("/dev/rckdyn010", O_RDWR|O_SYNC);
@@ -102,12 +105,12 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   
 
   //calculate the start-address in the SHM, depending on the max. number of participating WORKERS and the ID of the calling WORKER
-  if(node_ID == 0){
+  if(RC_COREID[node_ID] == master_ID){
     freeList = local+(48*numMailboxes);
   } else {
     freeList = local+MEMORY_OFFSET(node_ID);
   }
-  PRT_DBG("sccmalloc: freelist address: %p\n",freeList);
+  PRT_DBG1("sccmalloc: freelist address: %p\n",freeList);
   	
 	/*
   lut_addr_t *addr_t=(lut_addr_t*)malloc(sizeof(lut_addr_t));
@@ -118,7 +121,10 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 	
   freeList->hdr.next = freeList;
   freeList->hdr.size = SHM_MEMORY_SIZE / sizeof(block_t);
-
+  
+  start = *addr;
+  PRT_DBG1("start %x %p\n",start,start);
+  
   //init mutex variable for the SCCMallocPtr function
   pthread_mutex_init(&malloc_lock, NULL);
 }
@@ -174,7 +180,7 @@ void *SCCMallocPtr(size_t size)
 				}
 				freeList = prev;
 				pthread_mutex_unlock(&malloc_lock);
-        //printf("SCCMalloc: returned %p at time: %f of size: %d 0x%x\n",(void*) (curr + 1),SCCGetTime(),size,size);
+        PRT_DBG1("SCCMalloc: returned %p at time: %f of size: %d 0x%x\n",(void*) (curr + 1),SCCGetTime(),size,size);
 				return (void*) (curr + 1);
 			}
 		} while (curr != freeList && (prev = curr, curr = curr->hdr.next));
@@ -188,10 +194,17 @@ void *SCCMallocPtr(size_t size)
 /*
  * SCCFreePtr is used to free memory in the SHM
  */
+void SCCFreePtr1(void *p){
+  if(start > p) printf("SCCMalloc: NOT MAY MALLOC Free %p at time: %f\n",p,SCCGetTime());
+  else printf("SCCMalloc: Free %p at time: %f\n",p,SCCGetTime());
+}
+
 void SCCFreePtr(void *p)
-{}
-void SCCFreePtr1(void *p)
 {
+  if((p == NULL) || (start > p)) return;
+  //fprintf(stderr,"sccMalloc: Trying to free null pointer\n"); return;
+  pthread_mutex_lock(&malloc_lock);
+  
   block_t *block = (block_t*) p - 1,
           *curr = freeList;
 
@@ -223,6 +236,8 @@ void SCCFreePtr1(void *p)
   }
 
   freeList = curr;
+  
+  pthread_mutex_unlock(&malloc_lock);
 }
 
 

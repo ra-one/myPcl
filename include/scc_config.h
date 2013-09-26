@@ -219,6 +219,7 @@ typedef volatile unsigned int         tVUINT32;
 
 // MPB pointer type
 typedef volatile unsigned char* t_vcharp;
+typedef volatile unsigned int* t_vintp;
 
 // DVFS related FPGA registers including factor
 // to calculate human readable value...
@@ -258,6 +259,8 @@ typedef volatile unsigned char* t_vcharp;
 #define DVFS_TIMER_PRIME      0x0855C
 #define DVFS_TIMER_SECONDARY  0x08560
 #define DVFS_TIMER_TERTIARY   0x08564
+
+#define TILEDIVIDER           0x00000080
 
 // #########################################################################################
 //  _____                 _   _

@@ -44,6 +44,14 @@
 #define AIR_MBOX_SYNCH_VALUE 0
 #define LOCAL_LUT   0x29
 
+/* Power defines */
+#define RC_MAX_FREQUENCY_DIVIDER     16  // maximum divider value, so lowest F
+#define RC_MIN_FREQUENCY_DIVIDER     2   // minimum divider value, so highest F
+#define RC_NUM_VOLTAGE_LEVELS        7
+#define RC_GLOBAL_CLOCK_MHZ          1600
+#define RC_VOLTAGE_DOMAINS           6
+
+
 extern int node_location;
 extern int master_ID;
 extern int num_worker;
@@ -56,6 +64,7 @@ extern t_vcharp mpbs[CORES];
 extern t_vcharp locks[CORES];
 extern volatile int *irq_pins[CORES];
 extern volatile uint64_t *luts[CORES];
+
 
 static inline int min(int x, int y) { return x < y ? x : y; }
 
@@ -79,10 +88,30 @@ typedef volatile struct _AIR {
 
 extern AIR atomic_inc_regs[2*CORES];
 
-//void sccInit();
-void SCCInit(int masterNode, int numWorkers, int numWrapper);
+/* Power functions */
+
+typedef struct {
+float volt; 
+int   VID;
+int   MHz_cap; 
+} triple;
+
+typedef struct {
+int current_volt_level; 
+int current_freq_div; 
+} dom_fv;
+
+extern int activeDomains[6];
+extern int RC_COREID[CORES];
+
+int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain);
+int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain);
+
+/* Support Functions */
+void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile);
 void SCCStop();
 int  SCCGetNodeID();
+int SCCGetNodeRank();
 int  SCCIsMaster();
 double SCCGetTime();
 void atomic_incR(AIR *reg, int *value);
@@ -90,7 +119,7 @@ void atomic_decR(AIR *reg, int value);
 void atomic_readR(AIR *reg, int *value);
 void atomic_writeR(AIR *reg, int value);
 
-/*malloc functions*/
+/* malloc functions */
 
 typedef struct {
   unsigned char node, lut;
