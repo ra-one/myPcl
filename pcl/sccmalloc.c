@@ -195,14 +195,25 @@ void *SCCMallocPtr(size_t size)
  * SCCFreePtr is used to free memory in the SHM
  */
 void SCCFreePtr1(void *p){
-  if(start > p) printf("SCCMalloc: NOT MAY MALLOC Free %p at time: %f\n",p,SCCGetTime());
-  else printf("SCCMalloc: Free %p at time: %f\n",p,SCCGetTime());
+  if(p == NULL) return;
+  
+  if(start > p){
+    fprintf(stderr,"\nSCCMalloc: NOT MAY MALLOC Free %p at time: %f\n",p,SCCGetTime()); 
+    free(p);
+    fprintf(stderr,"SCCMalloc: FREE success at %f\n",SCCGetTime()); 
+    return;
+  }
 }
 
 void SCCFreePtr(void *p)
 {
-  if((p == NULL) || (start > p)) return;
-  //fprintf(stderr,"sccMalloc: Trying to free null pointer\n"); return;
+  // this deals with NULL or some normal malloc trying to be freed by this function
+  // specially from snet-rts lexer.c
+  if((p == NULL) || (start > p)){
+    free(p);    
+    return;
+  }
+  
   pthread_mutex_lock(&malloc_lock);
   
   block_t *block = (block_t*) p - 1,
