@@ -106,7 +106,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
   z = z & 7; // bits 02:00
   node_location = PID(x, y, z);
   
-  SCCFill_RC_COREID(num_worker, hostFile);
+  SCCFill_RC_COREID(num_worker, num_wrapper, hostFile);
 
   air_baseE = (int *) MallocConfigReg(FPGA_BASE + 0xE000);
   air_baseF = (int *) MallocConfigReg(FPGA_BASE + 0xF000);
@@ -180,9 +180,10 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
       entryNo = PAGES_PER_CORE+(num_pages-1);
     	//printf("Copy to node %d's LUT entry Nr: %d / 0x%x from node %d's LUT entry Nr: %d / 0x%x. Num_pages: %i, Max_pages: %i\n",
         //      node_location, entryNo,entryNo, i*num_worker,lut, lut, num_pages-1, max_pages);	
+      printf("LUT(%d, %d) = LUT(%d, %d)",node_location,entryNo,i * num_worker,lut);
 		}
   }
-
+  printf("\n\n");
   //***********************************************
   // some inits for the MPB
   flush();
@@ -278,7 +279,7 @@ void SCCStop(){
   SCCMallocStop();
 }
 
-SCCFill_RC_COREID(int numWorkers, char *hostFile){
+void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
   FILE *fd;
   int np,cid;
   char * line = NULL;
@@ -289,7 +290,7 @@ SCCFill_RC_COREID(int numWorkers, char *hostFile){
   // fill with invalid value
   for(np=0;np<CORES;np++) RC_COREID[np] = -1;
   
-	for(np=0;np<numWorkers;np++){
+	for(np=0;np<(numWorkers+numWrapper);np++){
 	  getline(&line,&len,fd);
     RC_COREID[np] = atoi(line);
     // node_rank is virtual address
@@ -298,7 +299,7 @@ SCCFill_RC_COREID(int numWorkers, char *hostFile){
    
   fclose(fd);
   
-  printfM("scc: my location: %d, my rank : %d\n",node_location,node_rank);
+  //printf("scc: my location: %d, my rank : %d\n",node_location,node_rank);
   
   for(np=0;np<RC_VOLTAGE_DOMAINS;np++) activeDomains[np] = -1;
   for(np=0;np<numWorkers;np++){
@@ -490,6 +491,15 @@ int SCCGetNodeID(void){
 //--------------------------------------------------------------------------------------
 int SCCGetNodeRank(void){
 	return node_rank;
+}
+
+//--------------------------------------------------------------------------------------
+// FUNCTION: SCCGetNumWrappers
+//--------------------------------------------------------------------------------------
+// Returns number of wrappers
+//--------------------------------------------------------------------------------------
+int SCCGetNumWrappers(void){
+	return num_wrapper;
 }
 
 //--------------------------------------------------------------------------------------

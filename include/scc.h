@@ -21,7 +21,7 @@
 #define MAX_PAGES           (152) //instead of 192, because first 41 can not be used to map into
 #define SHM_MEMORY_SIZE			0x98000000
 //#define LOCAL_SHMSIZE  			SHM_MEMORY_SIZE/num_worker
-#define MEMORY_OFFSET(id) 	(id *(SHM_MEMORY_SIZE/num_worker))
+#define MEMORY_OFFSET(id) 	(id *(SHM_MEMORY_SIZE/(num_worker+num_wrapper)))
 
 
 #define CORES               (NUM_ROWS * NUM_COLS * NUM_CORES)
@@ -55,6 +55,7 @@
 extern int node_location;
 extern int master_ID;
 extern int num_worker;
+extern int num_wrapper;
 extern int num_mailboxes;
 extern uintptr_t  *allMbox;
 
@@ -111,8 +112,9 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain);
 void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile);
 void SCCStop();
 int  SCCGetNodeID();
-int SCCGetNodeRank();
+int  SCCGetNodeRank();
 int  SCCIsMaster();
+int  SCCGetNumWrappers();
 double SCCGetTime();
 void atomic_incR(AIR *reg, int *value);
 void atomic_decR(AIR *reg, int value);

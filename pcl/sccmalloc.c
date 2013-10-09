@@ -11,6 +11,7 @@
 #include <pthread.h>
 //#define PRT_DBG printf
 //#define PRT_DBG1 printf
+#define PRT_ADR printf
 
 //mutex variable used to lock SCCMallocPtr, because of the possibility of different threads running on the same core
 pthread_mutex_t malloc_lock;
@@ -71,7 +72,8 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   node_ID = SCCGetNodeRank(); //get logical id
   // Open driver device "/dev/rckdyn011" to map memory in write-through mode 
   //mem = open("/dev/rckdcm", O_RDWR|O_SYNC);
-  mem = open("/dev/rckdyn010", O_RDWR|O_SYNC);
+  //mem = open("/dev/rckdyn010", O_RDWR|O_SYNC); //works in wrapper on master
+  mem = open("/dev/rckncm", O_RDWR|O_SYNC); //works in wrapper on master
   PRT_DBG("mem: %i\n", mem);
   if (mem < 0) {
 		fprintf(stderr, "Opening /dev/rckdyn011 failed!\n");
@@ -84,7 +86,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
    *
    */
 	if (*addr==0x0){
-		PRT_DBG("MASTER MMAP\n\n");
+		PRT_ADR("MASTER MMAP\n\n");
 		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, LOCAL_LUT << 24);
 		
 		if (local == NULL) fprintf(stderr, "Couldn't map memory!\n");
@@ -95,22 +97,49 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 		if (local == NULL) fprintf(stderr, "Couldn't map memory!\n");
 		*addr=local;
   }else{
-		PRT_DBG("WORKER MMAP\n\n");
+		PRT_ADR("WORKER MMAP\n\n");
 		local=*addr;	
 		local = mmap((void*)local,     	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
 		if (local == NULL) fprintf(stderr, "Couldn't map memory!");
   }  
 
-  PRT_DBG("addr: %p\nlocal: %p\nMEMORY_OFFSET(%d): %u\n",*addr,local,node_ID,MEMORY_OFFSET(node_ID));
+  PRT_ADR("sccmalloc: addr: %p\n",*addr);
   
 
   //calculate the start-address in the SHM, depending on the max. number of participating WORKERS and the ID of the calling WORKER
   if(RC_COREID[node_ID] == master_ID){
     freeList = local+(48*numMailboxes);
+    /*int *a = local+MEMORY_OFFSET(2)-200;
+    int *a1 = local+MEMORY_OFFSET(2)-175;
+    int *a2 = local+MEMORY_OFFSET(2)-150;
+    int *a3 = local+MEMORY_OFFSET(2)-100;
+    int *a4 = local+MEMORY_OFFSET(2);
+    int *a5 = local+MEMORY_OFFSET(2)+100;
+    int *a6 = local+MEMORY_OFFSET(2)+200;
+    int *a7 = local+MEMORY_OFFSET(2)+300;
+    int *b = local+MEMORY_OFFSET(3);
+    *a = 990;
+    *a1 = 991;
+    *a2 = 992;
+    *a3 = 993;
+    *a4 = 994;
+    *a5 = 995;
+    *a6 = 996;
+    *a7 = 997;
+    *b = 999;
+    printf("a: %p, %d\n",a,*a);
+    printf("a1: %p, %d\n",a1,*a1);
+    printf("a2: %p, %d\n",a2,*a2);
+    printf("a3: %p, %d\n",a3,*a3);
+    printf("a4: %p, %d\n",a4,*a4);
+    printf("a5: %p, %d\n",a5,*a5);
+    printf("a6: %p, %d\n",a6,*a6);
+    printf("a7: %p, %d\n",a7,*a7);
+    printf("b: %p, %d\n",b,*b);
+    printf("Tot: 0x%x\n",local+SHM_MEMORY_SIZE);*/
   } else {
     freeList = local+MEMORY_OFFSET(node_ID);
   }
-  PRT_DBG1("sccmalloc: freelist address: %p\n",freeList);
   	
 	/*
   lut_addr_t *addr_t=(lut_addr_t*)malloc(sizeof(lut_addr_t));
@@ -118,12 +147,20 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   PRT_DBG("LUT-entry of freelist:		%d\n",addr_t->lut);
   PRT_DBG("freelist's LUT offset: 		%u\n",addr_t->offset);
 	*/
-	
-  freeList->hdr.next = freeList;
-  freeList->hdr.size = SHM_MEMORY_SIZE / sizeof(block_t);
+  PRT_ADR("SHM_MEMORY_SIZE: %zu, sizeof(block_t): %d\n",SHM_MEMORY_SIZE,sizeof(block_t));
+	PRT_ADR("\nsccmalloc: freeList %p\n",freeList);
   
+  freeList->hdr.next = freeList;
+  PRT_ADR("sccmalloc: next: %p\n",freeList->hdr.next);
+  
+  freeList->hdr.size = SHM_MEMORY_SIZE / sizeof(block_t);
+  //freeList->hdr.size = 10000;
+  PRT_ADR("sccmalloc: size: %zu\n\n",freeList->hdr.size);
+  
+  //PRT_ADR("sccmalloc: Node_ID: %d, freelist: %p, local: %p\n\toffset: 0x%x, hdr.size: %d\n",node_ID,freeList,local,MEMORY_OFFSET(node_ID),freeList->hdr.size);
+  //PRT_ADR("\nsccmalloc: freeList %p, next: %p, size :0x%x\n",freeList,freeList->hdr.next,freeList->hdr.size);
   start = *addr;
-  PRT_DBG1("start %x %p\n",start,start);
+  PRT_DBG("start %x %p\n",start,start);
   
   //init mutex variable for the SCCMallocPtr function
   pthread_mutex_init(&malloc_lock, NULL);
