@@ -5,16 +5,15 @@
 #include <stdarg.h>
 
 #include "scc.h"
-#include "RCCE_memcpy.c"
 
-//#define printfM //
-#define printfM //
-#define PRT_DBG1 //
+#define PRT_SYNC //
+#define PRT_ADR //
+#define PRT_MBX //
+
 
 //used to write SHM start address into MPB
 uintptr_t  addr=0x0;
 uintptr_t  *allMbox;
-t_vcharp  mbox_start_addr=0x0;
 
 // global variables for the MPB, LUT, PINS, LOCKS and AIR
 t_vcharp mpbs[CORES];
@@ -76,13 +75,12 @@ unsigned int FID_word(int Fdiv, int tile_ID);
 unsigned int VID_word(float voltage, int domain);
 int get_divider(int tile_ID);
 
-int node_location_phy = -1;
-int node_rank = -1;
-int num_worker = -1;
-int num_wrapper = -1;
-int num_mailboxes = -1;
-int master_ID = -1;
-int dynamicMode = 0;
+int node_id = -1;  // physical location
+int node_rank = -1;  // logical location
+int num_worker = -1; // number of workers including master
+int num_wrapper = -1; // number of wrappers
+int num_mailboxes = -1; // number of mailboxes (worker + wrappers)
+int master_id = -1;
 int activeDomains[6];
 
 //variables for the AIR init
@@ -90,15 +88,14 @@ int *air_baseE, *air_baseF;
 
 void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile);
 
-void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
+void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   //variables for the MPB init
   int core,size, x, y, z, address;
-  unsigned char cpu, num_pages;
-
+  unsigned char cpu;
+  
   InitAPI(0);
   
   num_worker = numWorkers;
-  master_ID = masterNode;
   num_wrapper = numWrapper;
   num_mailboxes = num_worker + num_wrapper;
   
@@ -106,10 +103,11 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
   x = (z >> 3) & 0x0f; // bits 06:03
   y = (z >> 7) & 0x0f; // bits 10:07
   z = z & 7; // bits 02:00
-  node_location_phy = PID(x, y, z);
+  node_id = PID(x, y, z);
   
+  // master_id gets value in this function
   SCCFill_RC_COREID(num_worker, num_wrapper, hostFile);
-
+  
   air_baseE = (int *) MallocConfigReg(FPGA_BASE + 0xE000);
   air_baseF = (int *) MallocConfigReg(FPGA_BASE + 0xF000);
 
@@ -118,7 +116,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
     y = Y_PID(cpu);
     z = Z_PID(cpu);
 
-    if (cpu == node_location_phy) address = CRB_OWN;
+    if (cpu == node_id) address = CRB_OWN;
     else address = CRB_ADDR(x, y);
 
     //LUT, PINS, LOCK allocation
@@ -127,7 +125,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
     locks[cpu] = (t_vcharp) MallocConfigReg(address + (z ? LOCK1 : LOCK0));
     
     //MPB allocation
-    MPBalloc(&mpbs[cpu], x, y, z, cpu == node_location_phy);
+    MPBalloc(&mpbs[cpu], x, y, z, cpu == node_id);
 
     //FIRST SET OF AIR
     atomic_inc_regs[cpu].counter = air_baseE + 2*cpu;
@@ -136,7 +134,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
     //SECOND SET OF AIR
     atomic_inc_regs[CORES+cpu].counter 	= air_baseF + 2*cpu;
     atomic_inc_regs[CORES+cpu].init 	= air_baseF + 2*cpu + 1;
-    if(node_location_phy == master_ID){
+    if(SCCIsMaster()){
       // only one core(master) needs to call this
       *atomic_inc_regs[cpu].init = 0;
       *atomic_inc_regs[CORES+cpu].init = 0;
@@ -145,26 +143,15 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
 
   //***********************************************
   //LUT remapping
-
-  num_pages = PAGES_PER_CORE - LINUX_PRIV_PAGES;
-  int max_pages = MAX_PAGES-1; // MAX_PAGES = 152
-  int i, lut, origin;
   
   /* Because we used all the AIR in the mailbox to run a first version,
    * atomic_inc_regs 30 is used here because to test it we never run worker Nr. 30
    * but in a proper version this should be changed back to the out-commented line above each atomic operation
    */  
 
-  if(node_location_phy != master_ID){
-    int value=-1;
-    PRT_DBG1("Wait for MASTER'S LUT MAPPING!!! \n");
-    while(value != num_worker){
-      //atomic_readR(&atomic_inc_regs[master_ID],&value);
-      //atomic_readR(&atomic_inc_regs[master_ID],&value);
-      memcpy((void*)&value, (const void*)mpbs[master_ID]+8, sizeof(int));
-    }
-    PRT_DBG("value= %d\n",value);
-    PRT_DBG1("AIR==1 -> MASTER has finished LUT mapping.\n");
+  if(!SCCIsMaster()){ // should be false and only worker will wait here
+    PRT_SYNC("Wait for MASTER'S LUT MAPPING!!! \n");
+    while(WAITWORKERS != num_worker);
   }
   /*
    * LUT MAPPPING WHICH TAKES UNUSED ENTRIES 0-40 FROM EACH UNUSED CORE AND 
@@ -174,18 +161,20 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
    * unused cores, therefore change it back to the version above but don't 
    * forget to check if the mapping above is correct
    */
+
+  int max_pages = MAX_PAGES-1; // MAX_PAGES = 152
   
-  int copyTo, copyFrom, entryTo,entryFrom;
+  int i, lut, copyTo, copyFrom, entryTo,entryFrom;
+  unsigned char num_pages=0;
   int copyFrm[]={4,5,16,17};
-  num_pages=0;
-	
+  	
   for (i = 1; i < CORES / num_worker && num_pages < max_pages; i++) {
     for (lut = 0; lut < PAGES_PER_CORE && num_pages < max_pages; lut++) {
-      copyTo = node_location_phy;
+      copyTo = node_id;
       entryTo = PAGES_PER_CORE + num_pages++;
       copyFrom = copyFrm[i-1];
       entryFrom = lut;
-      //printf("LUT(%d, %d) = LUT(%d, %d)\n",copyTo,entryTo,copyFrom,entryFrom);
+      PRT_MBX("LUT(%d, %d) = LUT(%d, %d)\n",copyTo,entryTo,copyFrom,entryFrom);
       LUT(copyTo,entryTo) = LUT(copyFrom,entryFrom);
 		}
   }
@@ -193,27 +182,20 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
   //***********************************************
   // some inits for the MPB
   flush();
-  //false = 0, true = 1
-  START(node_location_phy) = 0;
-  END(node_location_phy) = 0;
-  /* Start with an initial handling run to avoid a cross-core race. */
-  HANDLING(node_location_phy) = 1;
-  WRITING(node_location_phy) = 0;
-
+  
   //***********************************************
   /*
   * synchronisation in the init state:
   * The Master maps the SHM and writes the SHM Start-address to the MPB such that each worker can read it and we can get a proper SHM
   *
   */
-  if(node_location_phy == master_ID){
+  if(SCCIsMaster()){ // only master executes this code
     SCCMallocInit((void *)&addr,num_mailboxes);
-    PRT_DBG1("addr: %p\n",(void*)addr);
-    memcpy((void*)mpbs[master_ID]+16, (const void*)&addr, sizeof(uintptr_t));
-    //memcpy((void*)mpbs[master_ID]+8, (const void*)&num_worker, sizeof(int));
-    //cpy_mem_to_mpb(0, (void *)&addr, sizeof(uintptr_t));	
-    //atomic_writeR(&atomic_inc_regs[master_ID],num_worker);
-    SNETGLOBWAIT = 1;
+    PRT_ADR("addr: %p\n",(void*)addr);
+    memcpy((void*)MALLOCADDR, (const void*)&addr, sizeof(uintptr_t));
+  
+    // this makes snet thread wait for lpel to finish
+    SNETGLOBWAIT = 1; 
     
     RPC_virtual_address = (t_vintp) MallocConfigReg(RPC_BASE);
     for (i=0; i<CORES/2; i++) {
@@ -221,28 +203,20 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
       fChange_vAddr[i] = (t_vintp) MallocConfigReg(CRB_ADDR(x,y)+TILEDIVIDER); 
     }
     // get values for current voltage and freq
-    //get_divider(node_location_phy);
+    //get_divider(node_id);
     for (i=0; i<RC_VOLTAGE_DOMAINS; i++){
-        //RC_current_frequency_divider = get_divider(node_location_phy);
+        //RC_current_frequency_divider = get_divider(node_id);
         RC_current_val[i].current_volt_level = 4; //set to 1.1 default
         RC_current_val[i].current_freq_div = 3; //set to 533MHz default
     }
   }else{
-    /*
-     * READING AND WRITING BACK AFTERWARDS BECAUSE OF POINTER MOVING IN CPY_MPB_TO_MEM
-     * solve this case, by using a write to a fixed unused MPB address
-     */
-    
-    //cpy_mpb_to_mem(0, (void *)&addr, sizeof(uintptr_t));
-    //cpy_mem_to_mpb(0, (void *)&addr, sizeof(uintptr_t));
-    memcpy((void*)&addr, (const void*)mpbs[master_ID]+16, sizeof(uintptr_t));
-    PRT_DBG1("addr: %p\n",(void*)addr);
+    // worker waits untill it gets address to map shared memory from master
+    memcpy((void*)&addr, (const void*)MALLOCADDR, sizeof(uintptr_t));
+    PRT_ADR("addr: %p\n",(void*)addr);
     SCCMallocInit((void *)&addr,num_mailboxes);
   }
 
-  //***********************************************
-  //FOOL_WRITE_COMBINE;
-  unlock(node_location_phy);
+  unlock(node_id);
   
   //assign mailbox address into array
   allMbox = SCCMallocPtr (sizeof(uintptr_t)*num_mailboxes);  
@@ -250,15 +224,14 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
   for (i=0; i < num_mailboxes;i++){
     allMbox[i] = (void*)temp;
     temp = (void*)temp + 48;
-    printfM("scc.c: allMbox[%d] %p\n",i,allMbox[i]);
+    PRT_MBX("scc.c: allMbox[%d] %p\n",i,allMbox[i]);
   }
   
-  //unlock all workers
-  if(node_location_phy == master_ID){
-    memcpy((void*)mpbs[master_ID]+8, (const void*)&num_worker, sizeof(int));
+  //unlock all workers - only master executes this
+  if(SCCIsMaster()){
+    WAITWORKERS = num_worker;
   }
   FOOL_WRITE_COMBINE;
-  mbox_start_addr = M_START(node_location_phy);	
 }
 
 //--------------------------------------------------------------------------------------
@@ -277,7 +250,7 @@ void SCCStop(){
     FreeConfigReg((int*) luts[cpu]);
     MPBunalloc(&mpbs[cpu]);
   }
-  if(node_location_phy == master_ID){
+  if(SCCIsMaster()){ // only master free this
     FreeConfigReg((int*) RPC_virtual_address);
     for (i=0; i<CORES/2; i++) {
       FreeConfigReg((int*) fChange_vAddr[i]);
@@ -300,13 +273,12 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
 	for(np=0;np<(numWorkers+numWrapper);np++){
 	  getline(&line,&len,fd);
     RC_COREID[np] = atoi(line);
+    if(np == 0) master_id = RC_COREID[np]; // set master id
     // node_rank is virtual address
-    if(RC_COREID[np] == node_location_phy) node_rank = np;
+    if(RC_COREID[np] == node_id) node_rank = np;
 	}
    
   fclose(fd);
-  
-  //printf("scc: my location: %d, my rank : %d\n",node_location_phy,node_rank);
   
   for(np=0;np<RC_VOLTAGE_DOMAINS;np++) activeDomains[np] = -1;
   for(np=0;np<numWorkers;np++){
@@ -488,7 +460,7 @@ double SCCGetTime()
 // Returns node's physical ID
 //--------------------------------------------------------------------------------------
 int SCCGetNodeID(void){
-	return node_location_phy;
+	return node_id;
 }
 
 //--------------------------------------------------------------------------------------
@@ -515,7 +487,8 @@ int SCCGetNumWrappers(void){
 // Returns 1 if node is master 0 otherwise
 //--------------------------------------------------------------------------------------
 int SCCIsMaster(void){
-	return (node_location_phy == master_ID);
+  // if logical address is 0 then its master
+	return (node_rank == 0);
 }
 
 //--------------------------------------------------------------------------------------
@@ -558,114 +531,3 @@ void atomic_writeR(AIR *reg, int value)
   (*reg->init) = value;
 }
 
-
-//////////////////////////////////////////////////////////////////////////////////////// 
-// Deprecated  functions
-//////////////////////////////////////////////////////////////////////////////////////// 
-
-//--------------------------------------------------------------------------------------
-// FUNCTION: does not need anymore, sets flag dynamic task in snet/lpel can be created now
-//--------------------------------------------------------------------------------------
-void SCCStartDynamicMode(){
-  int i = 1;
-	memcpy((void*)mpbs[master_ID]+32, (const void*)&i, sizeof(int));
-  FOOL_WRITE_COMBINE;
-  flush();
-  dynamicMode = 1; 
-}
-
-//--------------------------------------------------------------------------------------
-// FUNCTION: does not need anymore, snet/lpel check if dynamic task mode is enabled
-//--------------------------------------------------------------------------------------
-int SCCIsDynamicMode(){
-  if (dynamicMode != 1){
-   int i = -1;
-   flush();
-   memcpy((void*)&i, (const void*)mpbs[master_ID]+32, sizeof(int));
-   if (i == 1) dynamicMode = i;
-  }
-  return dynamicMode;
-}
-
-//--------------------------------------------------------------------------------------
-// FUNCTION: cpy_mailbox_to_mpb
-//--------------------------------------------------------------------------------------
-// copy struct pointed by source to M_START and return M_START in dest
-//--------------------------------------------------------------------------------------
-void cpy_mailbox_to_mpb(void *dest,void *src, size_t size)
-{
-    memcpy_put((void*) mbox_start_addr, src, size);
-    dest = mbox_start_addr;
-    PRT_DBG("\n****************************mbox Cpy dest %p, start_addr %p\n\n",dest,mbox_start_addr);
-    PRT_DBG("memcpy_put: size %d copying at %p\n",size,mbox_start_addr);
-    //mbox_start_addr = (t_vcharp)((char*)mbox_start_addr + size);
-    mbox_start_addr += size;
-    FOOL_WRITE_COMBINE;
-    PRT_DBG("memcpy_put: mbox_start_addr after copy %p\n\n",mbox_start_addr);
-   
-}
-
-void cpy_mpb_to_mem(int node, void *dst, int size)
-{
-  int start, end, cpy;
-
-  flush();
-  start = START(node);
-  end = END(node);
-
-  while (size) {
-    if (end < start) cpy = min(size, B_SIZE - start);
-    else cpy = size;
-
-    flush();
-    memcpy(dst, (void*) (mpbs[node] + B_START + start), cpy);
-    start = (start + cpy) % B_SIZE;
-    dst = ((char*) dst) + cpy;
-    size -= cpy;
-  }
-
-  flush();
-  START(node) = start;
-  FOOL_WRITE_COMBINE;
-}
-
-void cpy_mem_to_mpb(int node, void *src, int size)
-{
-  int start, end, free;
-
-  if (size >= B_SIZE) {
-    fprintf(stderr,"Message to big!\n");
-    exit(3);
-  }
-
-  flush();
-  WRITING(node) = 1; //false = 0, true = 1
-  FOOL_WRITE_COMBINE;
-
-  while (size) {
-    flush();
-    start = START(node);
-    end = END(node);
-
-    if (end < start) free = start - end - 1;
-    else free = B_SIZE - end - (start == 0 ? 1 : 0);
-    free = min(free, size);
-
-    if (!free) {
-      unlock(node);
-      usleep(1);
-      lock(node);
-      continue;
-    }
-
-		PRT_DBG("memcpy_put:\n node: %d B_START+end: %d src: %s size: %d\n", node,B_START + end,src,free);
-		memcpy_put((void*) (mpbs[node] + B_START + end), src, free);
-
-    flush();
-    size -= free;
-    src += free;
-    END(node) = (end + free) % B_SIZE;
-    WRITING(node) = 0; //false = 0, true = 1
-    FOOL_WRITE_COMBINE;
-  }
-}

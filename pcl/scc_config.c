@@ -203,8 +203,6 @@ void MPBalloc(t_vcharp *MPB, int x, int y, int core, unsigned char isOwnMPB) {
   }
   
   MappedAddr = (t_vcharp) mmap(NULL, MPBSIZE, PROT_WRITE|PROT_READ, MAP_SHARED, MPBDeviceFD, alignedAddr);
-  //printf("core %d X %d Y %d, MappedAddr %p %X, alignedAddr %lu\n",core,x,y,MappedAddr,MappedAddr,alignedAddr);
-  //local = mmap((void*)local, SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
   if (MappedAddr == MAP_FAILED)
   {
           perror("mmap");

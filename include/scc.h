@@ -28,23 +28,15 @@
 #define CORES               (NUM_ROWS * NUM_COLS * NUM_CORES)
 #define IRQ_BIT             (0x01 << GLCFG_XINTR_BIT)
 
-#define B_OFFSET            64
-#define FOOL_WRITE_COMBINE  (mpbs[node_location_phy][0] = 1)
-#define START(i)            (*((volatile uint16_t *) (mpbs[i] + B_OFFSET)))
-#define END(i)              (*((volatile uint16_t *) (mpbs[i] + B_OFFSET + 2)))
-#define HANDLING(i)         (*(mpbs[i] + B_OFFSET + 4))
-#define WRITING(i)          (*(mpbs[i] + B_OFFSET + 5))
-#define B_START             (B_OFFSET + 32)
-#define SNETGLOBWAIT        (*(mpbs[0] + B_START + 2))
-#define B_SIZE              (MPBSIZE - B_START)
-#define M_START(i)          (mpbs[i] + B_START + (*((volatile uint16_t *) (mpbs[i] + B_OFFSET + 2))));
+#define FOOL_WRITE_COMBINE  (mpbs[node_id][0] = 1)
+#define SNETGLOBWAIT        (*(mpbs[0] + 2))
+// workers will wait on this address to become number of workers
+#define WAITWORKERS         (*(mpbs[0] + 16))
+// master will write malloc address at this address so that workers can get it
+#define MALLOCADDR          (mpbs[0] + 32)
+
 
 #define LUT(loc, idx)       (*((volatile uint32_t*)(&luts[loc][idx])))
-
-#define LUT_MEMORY_DOMAIN_OFFSET 6
-#define AIR_LUT_SYNCH_VALUE 1
-#define AIR_MBOX_SYNCH_VALUE 0
-#define LOCAL_LUT   0x29
 
 /* Power defines */
 #define RC_MAX_FREQUENCY_DIVIDER     16  // maximum divider value, so lowest F
@@ -54,8 +46,8 @@
 #define RC_VOLTAGE_DOMAINS           6
 
 
-extern int node_location_phy;
-extern int master_ID;
+extern int node_id;
+extern int master_id;
 extern int num_worker;
 extern int num_wrapper;
 extern int num_mailboxes;
@@ -76,12 +68,7 @@ static inline void flush() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
 
 static inline void lock(int core) { while (!(*locks[core] & 0x01)); }
 
-
 static inline void unlock(int core) { *locks[core] = 0; }
-
-void cpy_mpb_to_mem(int node, void *dst, int size);
-void cpy_mem_to_mpb(int node, void *src, int size);
-void cpy_mailbox_to_mpb(void *dest,void *src, size_t count);
 
 /*sync functions*/
 typedef volatile struct _AIR {
@@ -111,7 +98,7 @@ int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain);
 int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain);
 
 /* Support Functions */
-void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile);
+void SCCInit(int numWorkers, int numWrapper, char *hostFile);
 void SCCStop();
 int  SCCGetNodeID();
 int  SCCGetNodeRank();
@@ -125,23 +112,12 @@ void atomic_writeR(AIR *reg, int value);
 
 /* malloc functions */
 
-typedef struct {
-  unsigned char node, lut;
-  uint32_t offset;
-} lut_addr_t;
-
-lut_addr_t SCCPtr2Addr(void *p);
-void *SCCAddr2Ptr(lut_addr_t addr);
-
 void SCCMallocInit(uintptr_t *addr,int numMailboxes);
 void SCCMallocStop(void);
 void *SCCGetlocal(void);
 void *SCCGetLocalMemStart(void);
 void *SCCMallocPtr(size_t size);
 void SCCFreePtr(void *p);
-
-void SCCStartDynamicMode();
-int SCCIsDynamicMode();
 
 int DCMflush();
 
