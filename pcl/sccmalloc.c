@@ -11,7 +11,7 @@
 #include <pthread.h>
 //#define PRT_DBG printf
 //#define PRT_DBG1 printf
-#define PRT_ADR printf
+#define PRT_ADR //
 
 //mutex variable used to lock SCCMallocPtr, because of the possibility of different threads running on the same core
 pthread_mutex_t malloc_lock;
@@ -46,7 +46,7 @@ lut_addr_t SCCPtr2Addr(void *p)
     fprintf(stderr, "Invalid pointer\n");
   }
 
-  lut_addr_t result = {node_location, lut, offset};
+  lut_addr_t result = {node_location_phy, lut, offset};
   return result;
 }
 /*
@@ -85,21 +85,26 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
    * if the addr ptr. is set then the calling node is a WORKER and just has to map the memory to a fixed start-address gotten from the MASTER
    *
    */
+  unsigned int alignedAddr = (SHM_ADDR) & (~(getpagesize()-1));
+  unsigned int pageOffset = (SHM_ADDR) - alignedAddr;
+  
+  PRT_ADR("alignedAddr: %zu, pageOffset: %zu, LOCAL_LUT << 24: %zu",alignedAddr,pageOffset,LOCAL_LUT << 24);
+  
 	if (*addr==0x0){
 		PRT_ADR("MASTER MMAP\n\n");
-		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, LOCAL_LUT << 24);
+		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, alignedAddr);
 		
 		if (local == NULL) fprintf(stderr, "Couldn't map memory!\n");
 		else	munmap(local, SHM_MEMORY_SIZE);
 		
-		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
+		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
 		
 		if (local == NULL) fprintf(stderr, "Couldn't map memory!\n");
 		*addr=local;
   }else{
 		PRT_ADR("WORKER MMAP\n\n");
 		local=*addr;	
-		local = mmap((void*)local,     	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, LOCAL_LUT << 24);
+		local = mmap((void*)local,     	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
 		if (local == NULL) fprintf(stderr, "Couldn't map memory!");
   }  
 
@@ -154,7 +159,6 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   PRT_ADR("sccmalloc: next: %p\n",freeList->hdr.next);
   
   freeList->hdr.size = SHM_MEMORY_SIZE / sizeof(block_t);
-  //freeList->hdr.size = 10000;
   PRT_ADR("sccmalloc: size: %zu\n\n",freeList->hdr.size);
   
   //PRT_ADR("sccmalloc: Node_ID: %d, freelist: %p, local: %p\n\toffset: 0x%x, hdr.size: %d\n",node_ID,freeList,local,MEMORY_OFFSET(node_ID),freeList->hdr.size);

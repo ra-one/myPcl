@@ -76,7 +76,7 @@ unsigned int FID_word(int Fdiv, int tile_ID);
 unsigned int VID_word(float voltage, int domain);
 int get_divider(int tile_ID);
 
-int node_location = -1;
+int node_location_phy = -1;
 int node_rank = -1;
 int num_worker = -1;
 int num_wrapper = -1;
@@ -87,6 +87,8 @@ int activeDomains[6];
 
 //variables for the AIR init
 int *air_baseE, *air_baseF;
+
+void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile);
 
 void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
   //variables for the MPB init
@@ -104,7 +106,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
   x = (z >> 3) & 0x0f; // bits 06:03
   y = (z >> 7) & 0x0f; // bits 10:07
   z = z & 7; // bits 02:00
-  node_location = PID(x, y, z);
+  node_location_phy = PID(x, y, z);
   
   SCCFill_RC_COREID(num_worker, num_wrapper, hostFile);
 
@@ -116,7 +118,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
     y = Y_PID(cpu);
     z = Z_PID(cpu);
 
-    if (cpu == node_location) address = CRB_OWN;
+    if (cpu == node_location_phy) address = CRB_OWN;
     else address = CRB_ADDR(x, y);
 
     //LUT, PINS, LOCK allocation
@@ -125,7 +127,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
     locks[cpu] = (t_vcharp) MallocConfigReg(address + (z ? LOCK1 : LOCK0));
     
     //MPB allocation
-    MPBalloc(&mpbs[cpu], x, y, z, cpu == node_location);
+    MPBalloc(&mpbs[cpu], x, y, z, cpu == node_location_phy);
 
     //FIRST SET OF AIR
     atomic_inc_regs[cpu].counter = air_baseE + 2*cpu;
@@ -134,7 +136,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
     //SECOND SET OF AIR
     atomic_inc_regs[CORES+cpu].counter 	= air_baseF + 2*cpu;
     atomic_inc_regs[CORES+cpu].init 	= air_baseF + 2*cpu + 1;
-    if(node_location == master_ID){
+    if(node_location_phy == master_ID){
       // only one core(master) needs to call this
       *atomic_inc_regs[cpu].init = 0;
       *atomic_inc_regs[CORES+cpu].init = 0;
@@ -145,7 +147,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
   //LUT remapping
 
   num_pages = PAGES_PER_CORE - LINUX_PRIV_PAGES;
-  int max_pages = MAX_PAGES-1;
+  int max_pages = MAX_PAGES-1; // MAX_PAGES = 152
   int i, lut, origin;
   
   /* Because we used all the AIR in the mailbox to run a first version,
@@ -153,7 +155,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
    * but in a proper version this should be changed back to the out-commented line above each atomic operation
    */  
 
-  if(node_location != master_ID){
+  if(node_location_phy != master_ID){
     int value=-1;
     PRT_DBG1("Wait for MASTER'S LUT MAPPING!!! \n");
     while(value != num_worker){
@@ -172,27 +174,31 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
    * unused cores, therefore change it back to the version above but don't 
    * forget to check if the mapping above is correct
    */
-	num_pages=0;
-  int entryNo;
-	for (i = 1; i < CORES / num_worker && num_pages < max_pages; i++) {
+  
+  int copyTo, copyFrom, entryTo,entryFrom;
+  int copyFrm[]={4,5,16,17};
+  num_pages=0;
+	
+  for (i = 1; i < CORES / num_worker && num_pages < max_pages; i++) {
     for (lut = 0; lut < PAGES_PER_CORE && num_pages < max_pages; lut++) {
-      LUT(node_location, PAGES_PER_CORE + num_pages++) = LUT(i * num_worker, lut);
-      entryNo = PAGES_PER_CORE+(num_pages-1);
-    	//printf("Copy to node %d's LUT entry Nr: %d / 0x%x from node %d's LUT entry Nr: %d / 0x%x. Num_pages: %i, Max_pages: %i\n",
-        //      node_location, entryNo,entryNo, i*num_worker,lut, lut, num_pages-1, max_pages);	
-      printf("LUT(%d, %d) = LUT(%d, %d)",node_location,entryNo,i * num_worker,lut);
+      copyTo = node_location_phy;
+      entryTo = PAGES_PER_CORE + num_pages++;
+      copyFrom = copyFrm[i-1];
+      entryFrom = lut;
+      //printf("LUT(%d, %d) = LUT(%d, %d)\n",copyTo,entryTo,copyFrom,entryFrom);
+      LUT(copyTo,entryTo) = LUT(copyFrom,entryFrom);
 		}
   }
-  printf("\n\n");
+
   //***********************************************
   // some inits for the MPB
   flush();
   //false = 0, true = 1
-  START(node_location) = 0;
-  END(node_location) = 0;
+  START(node_location_phy) = 0;
+  END(node_location_phy) = 0;
   /* Start with an initial handling run to avoid a cross-core race. */
-  HANDLING(node_location) = 1;
-  WRITING(node_location) = 0;
+  HANDLING(node_location_phy) = 1;
+  WRITING(node_location_phy) = 0;
 
   //***********************************************
   /*
@@ -200,13 +206,14 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
   * The Master maps the SHM and writes the SHM Start-address to the MPB such that each worker can read it and we can get a proper SHM
   *
   */
-  if(node_location == master_ID){
+  if(node_location_phy == master_ID){
     SCCMallocInit((void *)&addr,num_mailboxes);
     PRT_DBG1("addr: %p\n",(void*)addr);
     memcpy((void*)mpbs[master_ID]+16, (const void*)&addr, sizeof(uintptr_t));
     //memcpy((void*)mpbs[master_ID]+8, (const void*)&num_worker, sizeof(int));
     //cpy_mem_to_mpb(0, (void *)&addr, sizeof(uintptr_t));	
     //atomic_writeR(&atomic_inc_regs[master_ID],num_worker);
+    SNETGLOBWAIT = 1;
     
     RPC_virtual_address = (t_vintp) MallocConfigReg(RPC_BASE);
     for (i=0; i<CORES/2; i++) {
@@ -214,9 +221,9 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
       fChange_vAddr[i] = (t_vintp) MallocConfigReg(CRB_ADDR(x,y)+TILEDIVIDER); 
     }
     // get values for current voltage and freq
-    //get_divider(node_location);
+    //get_divider(node_location_phy);
     for (i=0; i<RC_VOLTAGE_DOMAINS; i++){
-        //RC_current_frequency_divider = get_divider(node_location);
+        //RC_current_frequency_divider = get_divider(node_location_phy);
         RC_current_val[i].current_volt_level = 4; //set to 1.1 default
         RC_current_val[i].current_freq_div = 3; //set to 533MHz default
     }
@@ -235,7 +242,7 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
 
   //***********************************************
   //FOOL_WRITE_COMBINE;
-  unlock(node_location);
+  unlock(node_location_phy);
   
   //assign mailbox address into array
   allMbox = SCCMallocPtr (sizeof(uintptr_t)*num_mailboxes);  
@@ -247,11 +254,11 @@ void SCCInit(int masterNode, int numWorkers, int numWrapper, char *hostFile){
   }
   
   //unlock all workers
-  if(node_location == master_ID){
+  if(node_location_phy == master_ID){
     memcpy((void*)mpbs[master_ID]+8, (const void*)&num_worker, sizeof(int));
   }
   FOOL_WRITE_COMBINE;
-  mbox_start_addr = M_START(node_location);	
+  mbox_start_addr = M_START(node_location_phy);	
 }
 
 //--------------------------------------------------------------------------------------
@@ -270,7 +277,7 @@ void SCCStop(){
     FreeConfigReg((int*) luts[cpu]);
     MPBunalloc(&mpbs[cpu]);
   }
-  if(node_location == master_ID){
+  if(node_location_phy == master_ID){
     FreeConfigReg((int*) RPC_virtual_address);
     for (i=0; i<CORES/2; i++) {
       FreeConfigReg((int*) fChange_vAddr[i]);
@@ -294,12 +301,12 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
 	  getline(&line,&len,fd);
     RC_COREID[np] = atoi(line);
     // node_rank is virtual address
-    if(RC_COREID[np] == node_location) node_rank = np;
+    if(RC_COREID[np] == node_location_phy) node_rank = np;
 	}
    
   fclose(fd);
   
-  //printf("scc: my location: %d, my rank : %d\n",node_location,node_rank);
+  //printf("scc: my location: %d, my rank : %d\n",node_location_phy,node_rank);
   
   for(np=0;np<RC_VOLTAGE_DOMAINS;np++) activeDomains[np] = -1;
   for(np=0;np<numWorkers;np++){
@@ -481,7 +488,7 @@ double SCCGetTime()
 // Returns node's physical ID
 //--------------------------------------------------------------------------------------
 int SCCGetNodeID(void){
-	return node_location;
+	return node_location_phy;
 }
 
 //--------------------------------------------------------------------------------------
@@ -508,7 +515,7 @@ int SCCGetNumWrappers(void){
 // Returns 1 if node is master 0 otherwise
 //--------------------------------------------------------------------------------------
 int SCCIsMaster(void){
-	return (node_location == master_ID);
+	return (node_location_phy == master_ID);
 }
 
 //--------------------------------------------------------------------------------------

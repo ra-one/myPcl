@@ -19,7 +19,8 @@
 #define LINUX_PRIV_PAGES    (20)
 #define PAGES_PER_CORE      (41)
 #define MAX_PAGES           (152) //instead of 192, because first 41 can not be used to map into
-#define SHM_MEMORY_SIZE			0x98000000
+#define SHM_MEMORY_SIZE			0x97000000
+#define SHM_ADDR            0x41000000
 //#define LOCAL_SHMSIZE  			SHM_MEMORY_SIZE/num_worker
 #define MEMORY_OFFSET(id) 	(id *(SHM_MEMORY_SIZE/(num_worker+num_wrapper)))
 
@@ -28,12 +29,13 @@
 #define IRQ_BIT             (0x01 << GLCFG_XINTR_BIT)
 
 #define B_OFFSET            64
-#define FOOL_WRITE_COMBINE  (mpbs[node_location][0] = 1)
+#define FOOL_WRITE_COMBINE  (mpbs[node_location_phy][0] = 1)
 #define START(i)            (*((volatile uint16_t *) (mpbs[i] + B_OFFSET)))
 #define END(i)              (*((volatile uint16_t *) (mpbs[i] + B_OFFSET + 2)))
 #define HANDLING(i)         (*(mpbs[i] + B_OFFSET + 4))
 #define WRITING(i)          (*(mpbs[i] + B_OFFSET + 5))
 #define B_START             (B_OFFSET + 32)
+#define SNETGLOBWAIT        (*(mpbs[0] + B_START + 2))
 #define B_SIZE              (MPBSIZE - B_START)
 #define M_START(i)          (mpbs[i] + B_START + (*((volatile uint16_t *) (mpbs[i] + B_OFFSET + 2))));
 
@@ -52,7 +54,7 @@
 #define RC_VOLTAGE_DOMAINS           6
 
 
-extern int node_location;
+extern int node_location_phy;
 extern int master_ID;
 extern int num_worker;
 extern int num_wrapper;
