@@ -29,11 +29,12 @@
 #define IRQ_BIT             (0x01 << GLCFG_XINTR_BIT)
 
 #define FOOL_WRITE_COMBINE  (mpbs[node_id][0] = 1)
-#define SNETGLOBWAIT        (*(mpbs[0] + 2))
+#define MPB_LINE_SIZE       (1<<5) // 32
+#define SNETGLOBWAIT        (*(mpbs[0])) // on MPB line 0
 // workers will wait on this address to become number of workers
-#define WAITWORKERS         (*(mpbs[0] + 16))
+#define WAITWORKERS         (*(mpbs[0] + (MPB_LINE_SIZE * 1)))
 // master will write malloc address at this address so that workers can get it
-#define MALLOCADDR          (mpbs[0] + 32)
+#define MALLOCADDR          (mpbs[0] + (MPB_LINE_SIZE * 2))
 
 
 #define LUT(loc, idx)       (*((volatile uint32_t*)(&luts[loc][idx])))

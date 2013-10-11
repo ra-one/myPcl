@@ -90,7 +90,7 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile);
 
 void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   //variables for the MPB init
-  int core,size, x, y, z, address;
+  int core,size, x, y, z, address, offset;
   unsigned char cpu;
   
   InitAPI(0);
@@ -126,6 +126,12 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
     
     //MPB allocation
     MPBalloc(&mpbs[cpu], x, y, z, cpu == node_id);
+    
+    // clear MPB
+    if(SCCIsMaster()){
+      for (offset=0; offset < 0x2000; offset+=8)
+      *(volatile unsigned long long int*)(mpbs[cpu]+offset) = 0;
+    }
 
     //FIRST SET OF AIR
     atomic_inc_regs[cpu].counter = air_baseE + 2*cpu;
