@@ -30,11 +30,15 @@
 
 #define FOOL_WRITE_COMBINE  (mpbs[node_id][0] = 1)
 #define MPB_LINE_SIZE       (1<<5) // 32
-#define SNETGLOBWAIT        (*(mpbs[0])) // on MPB line 0
+//#define SNETGLOBWAIT        (*(mpbs[0])) // on MPB line 0
 // workers will wait on this address to become number of workers
-#define WAITWORKERS         (*(mpbs[0] + (MPB_LINE_SIZE * 1)))
+//#define WAITWORKERS         (*(mpbs[0] + (MPB_LINE_SIZE * 1)))
 // master will write malloc address at this address so that workers can get it
-#define MALLOCADDR          (mpbs[0] + (MPB_LINE_SIZE * 2))
+//#define MALLOCADDR          (mpbs[0] + (MPB_LINE_SIZE * 2))
+
+#define SNETGLOBWAIT        (*(mpbs[0] + 2)) // on MPB line 0
+#define WAITWORKERS         (*(mpbs[0] + 34))
+#define MALLOCADDR          (mpbs[0] + 66)
 
 
 #define LUT(loc, idx)       (*((volatile uint32_t*)(&luts[loc][idx])))
@@ -104,6 +108,7 @@ void SCCStop();
 int  SCCGetNodeID();
 int  SCCGetNodeRank();
 int  SCCIsMaster();
+int  SCCGetNumWrappers();
 int  SCCGetNumWrappers();
 double SCCGetTime();
 void atomic_incR(AIR *reg, int *value);

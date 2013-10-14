@@ -60,7 +60,9 @@ static int RC_domains[6][4] = {
     {24, 26, 36, 38}, {28, 30, 40, 42},{32, 34, 44, 46}
 };
 
-static int VCCADDR[] = {0x8410,0x8414,0x8418,0x8400,0x8404,0x840C};
+//static int VCCADDR[] = {0x8410,0x8414,0x8418,0x8400,0x8404,0x840C};
+// VCC values are shiftred by 1, as bug 328 on scc
+static int VCCADDR[] = {0x8404,0x8408,0x8410,0x8414,0x8418,0x8400};
 static int PD[] = {4,5,7,0,1,3};
 
 t_vintp fChange_vAddr[CORES/2];
@@ -74,6 +76,7 @@ int RC_set_frequency_divider(int tile_ID, int Fdiv);
 unsigned int FID_word(int Fdiv, int tile_ID);
 unsigned int VID_word(float voltage, int domain);
 int get_divider(int tile_ID);
+int getInt(float voltage);
 
 int node_id = -1;  // physical location
 int node_rank = -1;  // logical location
@@ -245,7 +248,7 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
 //--------------------------------------------------------------------------------------
 void SCCStop(){
   unsigned char cpu;
-  int i;
+  int i,offset;
   
   FreeConfigReg((int*) air_baseE);
   FreeConfigReg((int*) air_baseF);  
@@ -254,6 +257,10 @@ void SCCStop(){
     FreeConfigReg((int*) irq_pins[cpu]);
     FreeConfigReg((int*) locks[cpu]);
     FreeConfigReg((int*) luts[cpu]);
+    if(SCCIsMaster()){
+      for (offset=0; offset < 0x2000; offset+=8)
+      *(volatile unsigned long long int*)(mpbs[cpu]+offset) = 0;
+    }
     MPBunalloc(&mpbs[cpu]);
   }
   if(SCCIsMaster()){ // only master free this
@@ -330,7 +337,6 @@ int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain) {
 
 int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
 	int Vlevel,tile;
-  double temp,newVolt;
 
 	// if Fdiv is under or over min/max allowed the set it to min/max
 	if (Fdiv > RC_MAX_FREQUENCY_DIVIDER) Fdiv = RC_MAX_FREQUENCY_DIVIDER;
@@ -357,19 +363,23 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
     set_frequency_divider(Fdiv, new_Fdiv,domain);
   } 
   
-  // set newVolt to requested so we can check later 
-  newVolt = RC_V_MHz_cap[Vlevel].volt;
-  
   // write the VID word to RPC, need to send in physical domain
   *RPC_virtual_address = VID_word(RC_V_MHz_cap[Vlevel].volt, PD[domain]);
   
-  //TODO: code for change to take effect then do next domain
+  // set newVolt to requested so we can check later 
+  int oldVolti, newVolti, changed;
+  double volRead;
+  oldVolti = getInt(RC_V_MHz_cap[RC_current_val[domain].current_volt_level].volt);
+  newVolti = getInt(RC_V_MHz_cap[Vlevel].volt);
+ 
   // read status register untill value reflects change
-  /*
   do{
-    temp = readStatus(VCCADDR[domain],0.0000251770);
-  }while(temp < )
-  */
+    volRead = readStatus(VCCADDR[domain],0.0000251770);
+    if(newVolti > oldVolti)      { changed = newVolti <= getInt(volRead); } 
+    else if(newVolti < oldVolti) { changed = newVolti >= getInt(volRead); }
+    else if(newVolti == oldVolti){ changed = 1; }
+  }while(!changed);
+ 
   
   RC_current_val[domain].current_volt_level = Vlevel;
   
@@ -382,6 +392,7 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
   return(1);
 }
 
+// takes in physical domain number
 unsigned int VID_word(float voltage, int domain) {
   int VID, voltage_value;
 
@@ -432,6 +443,12 @@ int get_divider(int tile_ID) {
   if (word==RC_frequency_change_words[step][1]) return(step);
   else                                          return(-1);
 }
+
+int getInt(float voltage)
+{
+  return (int)(voltage * 10 + 0.5);
+}
+
 //////////////////////////////////////////////////////////////////////////////////////// 
 // End of Power and freq functions
 //////////////////////////////////////////////////////////////////////////////////////// 
@@ -485,6 +502,15 @@ int SCCGetNodeRank(void){
 //--------------------------------------------------------------------------------------
 int SCCGetNumWrappers(void){
 	return num_wrapper;
+}
+
+//--------------------------------------------------------------------------------------
+// FUNCTION: SCCGetNumCores
+//--------------------------------------------------------------------------------------
+// Returns number of participating cores
+//--------------------------------------------------------------------------------------
+int SCCGetNumCores(void){
+	return num_mailboxes;
 }
 
 //--------------------------------------------------------------------------------------

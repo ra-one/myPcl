@@ -89,7 +89,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   freeList->hdr.next = freeList;
   PRT_ADR("sccmalloc: next: %p\n",freeList->hdr.next);
   
-  freeList->hdr.size = SHM_MEMORY_SIZE / sizeof(block_t);
+  freeList->hdr.size = (SHM_MEMORY_SIZE/numMailboxes)/ sizeof(block_t);
   PRT_ADR("sccmalloc: size: %zu\n\n",freeList->hdr.size);
   
   // this is used in free to see if address is given by normal malloc or sccmalloc
