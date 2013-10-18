@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <sys/mman.h>
+#include <malloc.h>
 
 
 #include "scc.h"
@@ -29,6 +30,46 @@ static int mem;
 static block_t *freeList;
 
 uintptr_t start;
+
+
+//////////////////////////////////////////////////////////////////////////////////////// 
+// Start of Malloc / Free hooks
+//////////////////////////////////////////////////////////////////////////////////////// 
+/* Prototypes for our hooks.  */
+static void NK_init_hook (void);
+static void *NK_malloc_hook (size_t, const void *);
+static void NK_free_hook (void*, const void *);
+
+typeof(__free_hook) old_free_hook;
+typeof(__malloc_hook) old_malloc_hook;
+
+
+/* Override initializing hook from the C library. */
+//void (*__malloc_initialize_hook) (void) = NK_init_hook;
+
+static void NK_init_hook (void)
+{
+ old_malloc_hook = __malloc_hook;
+ old_free_hook = __free_hook;
+ __malloc_hook = NK_malloc_hook;
+ __free_hook = NK_free_hook;
+}
+static void *NK_malloc_hook (size_t size, const void *caller)
+{
+ void *result;
+
+ result = SCCMallocPtr(size);
+ 
+ return result;
+}
+
+static void NK_free_hook (void *ptr, const void *caller)
+{
+ SCCFreePtr(ptr);
+}
+//////////////////////////////////////////////////////////////////////////////////////// 
+// End of Malloc / Free hooks
+//////////////////////////////////////////////////////////////////////////////////////// 
 
 /*
  * SCCMallocInit creates a new mapping for the SHM and sets the "addr" pointer to the beginning address of this SHM
@@ -77,9 +118,11 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   //calculate the start-address in the SHM, depending on the max. number of participating WORKERS and the ID of the calling WORKER
   if(SCCIsMaster()){
     freeList = local+(48*numMailboxes);
+    freeList->hdr.size = ((SHM_MEMORY_SIZE/numMailboxes)-(48*numMailboxes))/ sizeof(block_t);
   } else {
     //get logical id and offset into memory to get local start
     freeList = local+MEMORY_OFFSET(SCCGetNodeRank());  
+    freeList->hdr.size = (SHM_MEMORY_SIZE/numMailboxes)/ sizeof(block_t);
   }
   	
 	
@@ -89,15 +132,19 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   freeList->hdr.next = freeList;
   PRT_ADR("sccmalloc: next: %p\n",freeList->hdr.next);
   
-  freeList->hdr.size = (SHM_MEMORY_SIZE/numMailboxes)/ sizeof(block_t);
+  //freeList->hdr.size = (SHM_MEMORY_SIZE/numMailboxes)/ sizeof(block_t);
   PRT_ADR("sccmalloc: size: %zu\n\n",freeList->hdr.size);
   
   // this is used in free to see if address is given by normal malloc or sccmalloc
   start = *addr; 
-  PRT_ADR("start %x %p\n",start,start);
+  //PRT_ADR("start %x %p\n",start,start);
+  printf("start %x %p\n",start,start);
   
   //init mutex variable for the SCCMallocPtr function
   pthread_mutex_init(&malloc_lock, NULL);
+  
+  /* Override initializing hook from the C library. */
+  void (*__malloc_initialize_hook) (void) = NK_init_hook;
 }
 
 void *SCCGetLocal(void){
@@ -106,6 +153,7 @@ void *SCCGetLocal(void){
 
 void SCCMallocStop(void)
 {
+  fprintf(stderr, "****************************\nsccmalloc stop at %f\n\n\n",SCCGetTime());
   munmap(local, SHM_MEMORY_SIZE);
   close(mem);
 }
@@ -150,8 +198,8 @@ void *SCCMallocPtr(size_t size)
 				}
 				freeList = prev;
 				pthread_mutex_unlock(&malloc_lock);
-        PRT_MALLOC("SCCMalloc: returned %p at time: %f of size: %d 0x%x\n",(void*) (curr + 1),SCCGetTime(),size,size);
-				return (void*) (curr + 1);
+        PRT_MALLOC("SCCMalloc: returns %p at time: %f\n",(void*) (curr + 1),SCCGetTime());
+        return (void*) (curr + 1);
 			}
 		} while (curr != freeList && (prev = curr, curr = curr->hdr.next));
 
@@ -169,10 +217,11 @@ void SCCFreePtr(void *p)
   // this deals with NULL or some normal malloc trying to be freed by this function
   // specially from snet-rts lexer.c
   if((p == NULL) || (start > p)){
+    PRT_MALLOC(stderr, "going to call free of %p at %f\n",p,SCCGetTime());
     free(p);    
     return;
   }
-  
+  PRT_MALLOC(stderr, "SCCFree pointer %p at %f\n",p,SCCGetTime());
   pthread_mutex_lock(&malloc_lock);
   
   block_t *block = (block_t*) p - 1,

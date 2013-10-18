@@ -3,13 +3,14 @@
 #include <stdio.h>
 #include <stdint.h> /*for uint16_t*/
 #include <stdarg.h>
+#include <malloc.h> /* Prototypes for __malloc_hook, __free_hook */
 
 #include "scc.h"
 
 #define PRT_SYNC //
 #define PRT_ADR //
 #define PRT_MBX //
-
+//#define USE_MALLOC_HOOK
 
 //used to write SHM start address into MPB
 uintptr_t  addr=0x0;
@@ -91,6 +92,77 @@ int *air_baseE, *air_baseF;
 
 void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile);
 
+
+//////////////////////////////////////////////////////////////////////////////////////// 
+// Start of Malloc / Free hooks
+//////////////////////////////////////////////////////////////////////////////////////// 
+#ifdef USE_MALLOC_HOOK
+/* Prototypes for our hooks.  */
+static void my_init_hook (void);
+static void *my_malloc_hook (size_t, const void *);
+static void my_free_hook (void*, const void *);
+
+typeof(__free_hook) old_free_hook;
+typeof(__malloc_hook) old_malloc_hook;
+
+
+/* Override initializing hook from the C library. */
+void (*__malloc_initialize_hook) (void) = my_init_hook;
+
+static void my_init_hook (void)
+{
+ old_malloc_hook = __malloc_hook;
+ old_free_hook = __free_hook;
+ __malloc_hook = my_malloc_hook;
+ __free_hook = my_free_hook;
+}
+
+static void *my_malloc_hook (size_t size, const void *caller)
+{
+ void *result;
+ /* Restore all old hooks */
+ __malloc_hook = old_malloc_hook;
+ __free_hook = old_free_hook;
+ /* Call recursively */
+ result = malloc (size);
+ /* Save underlying hooks */
+ old_malloc_hook = __malloc_hook;
+ old_free_hook = __free_hook;
+ /* printf might call malloc, so protect it too. */
+ printf ("malloc (%u) returns %p\n", (unsigned int) size, result);
+ //fprintf(fileMem,"malloc (%u) returns %p\n", (unsigned int) size, result); 
+ /* Restore our own hooks */
+ __malloc_hook = my_malloc_hook;
+ __free_hook = my_free_hook;
+ return result;
+}
+
+static void my_free_hook (void *ptr, const void *caller)
+{
+  printf ("WILL free pointer %p\n", ptr);
+ /* Restore our own hooks */
+ __malloc_hook = my_malloc_hook;
+ __free_hook = my_free_hook;
+ 
+ /* Restore all old hooks */
+ __malloc_hook = old_malloc_hook;
+ __free_hook = old_free_hook;
+ /* Call recursively */
+ free (ptr);
+ /* Save underlying hooks */
+ old_malloc_hook = __malloc_hook;
+ old_free_hook = __free_hook;
+ /* printf might call free, so protect it too. */
+ printf ("free pointer %p\n", ptr);
+ /* Restore our own hooks */
+ __malloc_hook = my_malloc_hook;
+ __free_hook = my_free_hook;
+}
+#endif // USE_MALLOC_HOOK
+//////////////////////////////////////////////////////////////////////////////////////// 
+// End of Malloc / Free hooks
+//////////////////////////////////////////////////////////////////////////////////////// 
+
 void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   //variables for the MPB init
   int core,size, x, y, z, address, offset;
@@ -107,7 +179,7 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   y = (z >> 7) & 0x0f; // bits 10:07
   z = z & 7; // bits 02:00
   node_id = PID(x, y, z);
-  
+ 
   // master_id gets value in this function
   SCCFill_RC_COREID(num_worker, num_wrapper, hostFile);
   
@@ -147,6 +219,11 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
       // only one core(master) needs to call this
       *atomic_inc_regs[cpu].init = 0;
       *atomic_inc_regs[CORES+cpu].init = 0;
+      unlock(cpu);
+    }
+    if(cpu == node_id){
+      atomic_writeR(&atomic_inc_regs[cpu], 0);
+      atomic_writeR(&atomic_inc_regs[CORES+cpu], 0);
     }
   } //end for
 
@@ -225,7 +302,7 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
     SCCMallocInit((void *)&addr,num_mailboxes);
   }
 
-  unlock(node_id);
+  //unlock(node_id);
   
   //assign mailbox address into array
   allMbox = SCCMallocPtr (sizeof(uintptr_t)*num_mailboxes);  

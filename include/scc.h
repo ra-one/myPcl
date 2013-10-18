@@ -39,6 +39,7 @@
 #define SNETGLOBWAIT        (*(mpbs[0] + 2)) // on MPB line 0
 #define WAITWORKERS         (*(mpbs[0] + 34))
 #define MALLOCADDR          (mpbs[0] + 66)
+#define MESSTOP             (*(mpbs[0] + 98))
 
 
 #define LUT(loc, idx)       (*((volatile uint32_t*)(&luts[loc][idx])))
@@ -49,7 +50,6 @@
 #define RC_NUM_VOLTAGE_LEVELS        7
 #define RC_GLOBAL_CLOCK_MHZ          1600
 #define RC_VOLTAGE_DOMAINS           6
-
 
 extern int node_id;
 extern int master_id;
