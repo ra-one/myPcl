@@ -13,6 +13,9 @@
 
 #define PRT_ADR //
 #define PRT_MALLOC //
+#define PRT_MALLOCX //
+
+//#define USE_MALLOC_HOOK
 
 //mutex variable used to lock SCCMallocPtr, because of the possibility of different threads running on the same core
 pthread_mutex_t malloc_lock;
@@ -31,10 +34,11 @@ static block_t *freeList;
 
 uintptr_t start;
 
-
+extern int startHooks;
 //////////////////////////////////////////////////////////////////////////////////////// 
 // Start of Malloc / Free hooks
 //////////////////////////////////////////////////////////////////////////////////////// 
+#ifdef USE_MALLOC_HOOK
 /* Prototypes for our hooks.  */
 static void NK_init_hook (void);
 static void *NK_malloc_hook (size_t, const void *);
@@ -67,6 +71,7 @@ static void NK_free_hook (void *ptr, const void *caller)
 {
  SCCFreePtr(ptr);
 }
+#endif // USE_MALLOC_HOOK
 //////////////////////////////////////////////////////////////////////////////////////// 
 // End of Malloc / Free hooks
 //////////////////////////////////////////////////////////////////////////////////////// 
@@ -143,8 +148,10 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   //init mutex variable for the SCCMallocPtr function
   pthread_mutex_init(&malloc_lock, NULL);
   
+#ifdef USE_MALLOC_HOOK 
   /* Override initializing hook from the C library. */
   void (*__malloc_initialize_hook) (void) = NK_init_hook;
+#endif // USE_MALLOC_HOOK
 }
 
 void *SCCGetLocal(void){
@@ -172,18 +179,18 @@ void *SCCMallocPtr(size_t size)
   prev = freeList;
   curr = prev->hdr.next;
   nunits = (size + sizeof(block_t) - 1) / sizeof(block_t) + 1;
-  PRT_MALLOC("SCCMallocPtr is called for size: %zu, nunits %zu\n",size,nunits);
+  PRT_MALLOCX("SCCMallocPtr is called for size: %zu, nunits %zu\n",size,nunits);
   do {
 		/* the following debugging printout is very useful to check if there is a Problem 
 		 * with the memory allocation, usually forced by a not allowed write to the SHM 
 		 * either by a normal malloc or a manual write to an address in the SHM
 		 */
      //size and next will always be same as there is only one element in free list
-     PRT_MALLOC("prev->hdr.size %zu,prev->hdr.next %p, curr->hdr.size %zu, curr->hdr.next %p\n",prev->hdr.size,prev->hdr.next,curr->hdr.size,curr->hdr.next);
+     PRT_MALLOCX("prev->hdr.size %zu,prev->hdr.next %p, curr->hdr.size %zu, curr->hdr.next %p\n",prev->hdr.size,prev->hdr.next,curr->hdr.size,curr->hdr.next);
 			if (curr->hdr.size >= nunits){
 				if (curr->hdr.size == nunits){
 					if (prev == curr){
-						PRT_MALLOC("SET prev TO NULL in malloc\n");
+						PRT_MALLOCX("SET prev TO NULL in malloc\n");
 						prev = NULL;
 					}else{
 						prev->hdr.next = curr->hdr.next;
@@ -198,7 +205,7 @@ void *SCCMallocPtr(size_t size)
 				}
 				freeList = prev;
 				pthread_mutex_unlock(&malloc_lock);
-        PRT_MALLOC("SCCMalloc: returns %p at time: %f\n",(void*) (curr + 1),SCCGetTime());
+        PRT_MALLOC(stderr,"SCCMalloc: returns %p at time: %f\n",(void*) (curr + 1),SCCGetTime());
         return (void*) (curr + 1);
 			}
 		} while (curr != freeList && (prev = curr, curr = curr->hdr.next));
@@ -216,8 +223,10 @@ void SCCFreePtr(void *p)
 {
   // this deals with NULL or some normal malloc trying to be freed by this function
   // specially from snet-rts lexer.c
-  if((p == NULL) || (start > p)){
-    PRT_MALLOC(stderr, "going to call free of %p at %f\n",p,SCCGetTime());
+  if(p == NULL) return;
+  
+  if(start > p){
+    PRT_MALLOC(stderr, "SCCFree going to call free of %p at %f\n",p,SCCGetTime());
     free(p);    
     return;
   }

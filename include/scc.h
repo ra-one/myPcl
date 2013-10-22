@@ -40,6 +40,7 @@
 #define WAITWORKERS         (*(mpbs[0] + 34))
 #define MALLOCADDR          (mpbs[0] + 66)
 #define MESSTOP             (*(mpbs[0] + 98))
+#define SOSIADDR            (mpbs[0] + 130)
 
 
 #define LUT(loc, idx)       (*((volatile uint32_t*)(&luts[loc][idx])))
@@ -127,5 +128,7 @@ void SCCFreePtr(void *p);
 
 int DCMflush();
 
+
+void printAir();
 #endif /*SCC_H*/
 

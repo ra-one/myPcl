@@ -48,6 +48,10 @@ typedef volatile unsigned int         tVUINT32;
 #define PRIV_SLOTS 6
 #define PAGE_DIR_BASE 0x04B00000
 
+// Symbols for AIR malloc
+#define air_baseE	(0xf9000000+0xE000)
+#define air_baseF	(0xf9000000+0xF000)
+
 // Symbols for MPB malloc
 #define MPBADDRBITS 13
 #define MPBSIZE     (1<<MPBADDRBITS)

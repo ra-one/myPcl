@@ -10,7 +10,7 @@
 #define PRT_SYNC //
 #define PRT_ADR //
 #define PRT_MBX //
-//#define USE_MALLOC_HOOK
+#define USE_MALLOC_HOOK
 
 //used to write SHM start address into MPB
 uintptr_t  addr=0x0;
@@ -87,9 +87,6 @@ int num_mailboxes = -1; // number of mailboxes (worker + wrappers)
 int master_id = -1;
 int activeDomains[6];
 
-//variables for the AIR init
-int *air_baseE, *air_baseF;
-
 void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile);
 
 
@@ -97,6 +94,8 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile);
 // Start of Malloc / Free hooks
 //////////////////////////////////////////////////////////////////////////////////////// 
 #ifdef USE_MALLOC_HOOK
+void *mallocStart;
+static int mCount = 0;
 /* Prototypes for our hooks.  */
 static void my_init_hook (void);
 static void *my_malloc_hook (size_t, const void *);
@@ -111,6 +110,10 @@ void (*__malloc_initialize_hook) (void) = my_init_hook;
 
 static void my_init_hook (void)
 {
+ mallocStart = malloc(sizeof(char));
+ printf("mallocStart %p\n",mallocStart);
+
+
  old_malloc_hook = __malloc_hook;
  old_free_hook = __free_hook;
  __malloc_hook = my_malloc_hook;
@@ -119,6 +122,7 @@ static void my_init_hook (void)
 
 static void *my_malloc_hook (size_t size, const void *caller)
 {
+ mCount = mCount+1;
  void *result;
  /* Restore all old hooks */
  __malloc_hook = old_malloc_hook;
@@ -129,8 +133,7 @@ static void *my_malloc_hook (size_t size, const void *caller)
  old_malloc_hook = __malloc_hook;
  old_free_hook = __free_hook;
  /* printf might call malloc, so protect it too. */
- printf ("malloc (%u) returns %p\n", (unsigned int) size, result);
- //fprintf(fileMem,"malloc (%u) returns %p\n", (unsigned int) size, result); 
+ //printf ("malloc (%u) returns %p, mCount %d, caller %p\n", (unsigned int) size, result,(mCount-1),caller);
  /* Restore our own hooks */
  __malloc_hook = my_malloc_hook;
  __free_hook = my_free_hook;
@@ -138,17 +141,17 @@ static void *my_malloc_hook (size_t size, const void *caller)
 }
 
 static void my_free_hook (void *ptr, const void *caller)
+{}
+
+static void my_free_hook1 (void *ptr, const void *caller)
 {
-  printf ("WILL free pointer %p\n", ptr);
- /* Restore our own hooks */
- __malloc_hook = my_malloc_hook;
- __free_hook = my_free_hook;
- 
  /* Restore all old hooks */
  __malloc_hook = old_malloc_hook;
  __free_hook = old_free_hook;
+ printf ("WILL free pointer %p\n", ptr);
  /* Call recursively */
- free (ptr);
+ if(ptr != NULL && mallocStart > ptr)  { printf("in free pointer %p from another CORE\n", ptr); }
+ //else                                  { free (ptr); }
  /* Save underlying hooks */
  old_malloc_hook = __malloc_hook;
  old_free_hook = __free_hook;
@@ -162,6 +165,22 @@ static void my_free_hook (void *ptr, const void *caller)
 //////////////////////////////////////////////////////////////////////////////////////// 
 // End of Malloc / Free hooks
 //////////////////////////////////////////////////////////////////////////////////////// 
+
+void printAir1(){
+  unsigned char cpu,i;
+  for (i = 0; i < 49; i+=48){
+    for (cpu = 0; cpu < 48; cpu++){
+      printf("atomic_inc_regs[%d %p]\n",i+cpu,atomic_inc_regs[i+cpu]);
+    }
+  }
+}
+
+void printAir(){
+  unsigned char cpu;
+  for (cpu = 0; cpu < 16; cpu++){
+   printf("atomic_inc_regs[%d %p]\n",cpu,atomic_inc_regs[cpu]);
+  }
+}
 
 void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   //variables for the MPB init
@@ -182,9 +201,6 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
  
   // master_id gets value in this function
   SCCFill_RC_COREID(num_worker, num_wrapper, hostFile);
-  
-  air_baseE = (int *) MallocConfigReg(FPGA_BASE + 0xE000);
-  air_baseF = (int *) MallocConfigReg(FPGA_BASE + 0xF000);
 
   for (cpu = 0; cpu < 48; cpu++){
     x = X_PID(cpu);
@@ -206,27 +222,23 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
     if(SCCIsMaster()){
       for (offset=0; offset < 0x2000; offset+=8)
       *(volatile unsigned long long int*)(mpbs[cpu]+offset) = 0;
-    }
-
+    }     
+    
     //FIRST SET OF AIR
-    atomic_inc_regs[cpu].counter = air_baseE + 2*cpu;
-    atomic_inc_regs[cpu].init 	 = air_baseE + 2*cpu + 1;
-
+    atomic_inc_regs[cpu].counter = (int *) MallocConfigReg(air_baseE + (8*cpu));
+    atomic_inc_regs[cpu].init    = (int *) MallocConfigReg(air_baseE + (8*cpu) + 4);
+    
     //SECOND SET OF AIR
-    atomic_inc_regs[CORES+cpu].counter 	= air_baseF + 2*cpu;
-    atomic_inc_regs[CORES+cpu].init 	= air_baseF + 2*cpu + 1;
+    atomic_inc_regs[CORES+cpu].counter = (int *) MallocConfigReg(air_baseF + (8*cpu));
+    atomic_inc_regs[CORES+cpu].init    = (int *) MallocConfigReg(air_baseF + (8*cpu) + 4);
+    
     if(SCCIsMaster()){
       // only one core(master) needs to call this
       *atomic_inc_regs[cpu].init = 0;
       *atomic_inc_regs[CORES+cpu].init = 0;
       unlock(cpu);
     }
-    if(cpu == node_id){
-      atomic_writeR(&atomic_inc_regs[cpu], 0);
-      atomic_writeR(&atomic_inc_regs[CORES+cpu], 0);
-    }
   } //end for
-
   //***********************************************
   //LUT remapping
   
