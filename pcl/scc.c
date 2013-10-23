@@ -250,6 +250,7 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   if(!SCCIsMaster()){ // should be false and only worker will wait here
     PRT_SYNC("Wait for MASTER'S LUT MAPPING!!! \n");
     while(WAITWORKERS != num_worker);
+    PRT_SYNC("MASTER'S LUT MAPPING DONE!!! \n");
   }
   /*
    * LUT MAPPPING WHICH TAKES UNUSED ENTRIES 0-40 FROM EACH UNUSED CORE AND 
@@ -383,7 +384,7 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
   fclose(fd);
   
   for(np=0;np<RC_VOLTAGE_DOMAINS;np++) activeDomains[np] = -1;
-  for(np=0;np<numWorkers;np++){
+  for(np=0;np<(numWorkers+numWrapper);np++){
     cid = RC_COREID[np];
     if((cid >= 0 && cid <= 3) || (cid >= 12 && cid <= 15)) activeDomains[0] = 1;
     if((cid >= 4 && cid <= 7) || (cid >= 16 && cid <= 19)) activeDomains[1] = 1;
