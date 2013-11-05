@@ -100,6 +100,10 @@ int current_freq_div;
 extern int activeDomains[6];
 extern int RC_COREID[CORES];
 
+void set_min_freq();
+void change_freq(int inc);
+
+
 int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain);
 int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain);
 

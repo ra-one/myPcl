@@ -265,7 +265,8 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   
   int i, lut, copyTo, copyFrom, entryTo,entryFrom;
   unsigned char num_pages=0;
-  int copyFrm[]={4,5,16,17};
+  //int copyFrm[]={4,5,16,17};
+  int copyFrm[]={8,9,10,11};
   	
   for (i = 1; i < CORES / num_worker && num_pages < max_pages; i++) {
     for (lut = 0; lut < PAGES_PER_CORE && num_pages < max_pages; lut++) {
@@ -328,6 +329,8 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   
   //unlock all workers - only master executes this
   if(SCCIsMaster()){
+    // set all inactive domains to minimum
+    set_min_freq();
     WAITWORKERS = num_worker;
   }
   FOOL_WRITE_COMBINE;
@@ -397,6 +400,41 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
 //////////////////////////////////////////////////////////////////////////////////////// 
 // Start of Power and freq functions // virtual domain is passed in
 //////////////////////////////////////////////////////////////////////////////////////// 
+void set_min_freq(){
+  int reqFreqDiv = 15,i,new_Fdiv,new_Vlevel;;
+  
+  for(i=1;i<RC_VOLTAGE_DOMAINS;i++){
+    if(activeDomains[i] != 1){
+      //set_freq_volt_level(reqFreqDiv, &new_Fdiv, &new_Vlevel, i);
+      fprintf(stderr,"domain %d is inactive, set to lowest frequency\n",i);
+    }
+  }
+}
+
+void change_freq(int inc){
+  // do not change anything on active domain1 as it runs master
+  int reqFreqDiv = -1,i;
+  
+  for(i=1;i<RC_VOLTAGE_DOMAINS;i++){
+    if(activeDomains[i] == 1){
+      if(inc){
+        reqFreqDiv = RC_current_val[activeDomains[i]].current_freq_div + 1;
+      } else {
+        reqFreqDiv = RC_current_val[activeDomains[i]].current_freq_div - 1;
+      }
+      i = RC_VOLTAGE_DOMAINS+1;
+    }
+  }
+  int new_Fdiv,new_Vlevel;
+  
+  for(i=1;i<RC_VOLTAGE_DOMAINS;i++){
+    if(activeDomains[i] == 1){
+      //set_freq_volt_level(reqFreqDiv, &new_Fdiv, &new_Vlevel, i);
+      fprintf(stderr,"domain %d frequency changed\n",i);
+    }
+  }
+}
+
 int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain) {
 	int Vlevel,tile;
 
@@ -562,9 +600,9 @@ static inline unsigned long long gtsc(void)
 double SCCGetTime()
 { 
   // this is to generate time based on 125MHz system clock of the FPGA
-  return ( ((double)gtsc())/(0.125*1.e9));
+  //return ( ((double)gtsc())/(0.125*1.e9));
   // this is to generate time for 533 MHz clock
-  //return ( ((double)gtsc())/(0.533*1.e9));
+  return ( ((double)gtsc())/(0.533*1.e9));
 }
 
 //--------------------------------------------------------------------------------------

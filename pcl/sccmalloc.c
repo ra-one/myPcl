@@ -14,6 +14,8 @@
 #define PRT_ADR //
 #define PRT_MALLOC //
 #define PRT_MALLOCX //
+#define PRT_MALLOCX1 //
+//#define PRT_MALLOCX1 fprintf
 
 //#define USE_MALLOC_HOOK
 
@@ -34,58 +36,22 @@ static block_t *freeList;
 
 uintptr_t start;
 
-extern int startHooks;
-//////////////////////////////////////////////////////////////////////////////////////// 
-// Start of Malloc / Free hooks
-//////////////////////////////////////////////////////////////////////////////////////// 
-#ifdef USE_MALLOC_HOOK
-/* Prototypes for our hooks.  */
-static void NK_init_hook (void);
-static void *NK_malloc_hook (size_t, const void *);
-static void NK_free_hook (void*, const void *);
-
-typeof(__free_hook) old_free_hook;
-typeof(__malloc_hook) old_malloc_hook;
-
-
-/* Override initializing hook from the C library. */
-//void (*__malloc_initialize_hook) (void) = NK_init_hook;
-
-static void NK_init_hook (void)
-{
- old_malloc_hook = __malloc_hook;
- old_free_hook = __free_hook;
- __malloc_hook = NK_malloc_hook;
- __free_hook = NK_free_hook;
-}
-static void *NK_malloc_hook (size_t size, const void *caller)
-{
- void *result;
-
- result = SCCMallocPtr(size);
- 
- return result;
-}
-
-static void NK_free_hook (void *ptr, const void *caller)
-{
- SCCFreePtr(ptr);
-}
-#endif // USE_MALLOC_HOOK
-//////////////////////////////////////////////////////////////////////////////////////// 
-// End of Malloc / Free hooks
-//////////////////////////////////////////////////////////////////////////////////////// 
-
 /*
  * SCCMallocInit creates a new mapping for the SHM and sets the "addr" pointer to the beginning address of this SHM
  */
 
 void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 {
+  //init mutex variable for the SCCMallocPtr function
+  pthread_mutex_init(&malloc_lock, NULL);
+  
+  pthread_mutex_lock(&malloc_lock);
+  
   mem = open("/dev/rckncm", O_RDWR|O_SYNC);
   PRT_ADR("mem: %i\n", mem);
   if (mem < 0) {
 		fprintf(stderr, "Opening /dev/rckdyn011 failed!\n");
+    exit(-1);
   }	
 
   /*
@@ -103,23 +69,22 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 		PRT_ADR("MASTER MMAP\n\n");
 		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, alignedAddr);
 		
-		if (local == NULL) fprintf(stderr, "Couldn't map memory!\n");
+		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
 		else	munmap(local, SHM_MEMORY_SIZE);
 		
 		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
 		
-		if (local == NULL) fprintf(stderr, "Couldn't map memory!\n");
+		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
 		*addr=local;
   }else{
 		PRT_ADR("WORKER MMAP\n\n");
 		local=*addr;	
 		local = mmap((void*)local,     	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
-		if (local == NULL) fprintf(stderr, "Couldn't map memory!");
+		if (local == NULL) { fprintf(stderr, "Couldn't map memory!"); exit(-1); }
   }  
 
   PRT_ADR("sccmalloc: addr: %p\n",*addr);
   
-
   //calculate the start-address in the SHM, depending on the max. number of participating WORKERS and the ID of the calling WORKER
   if(SCCIsMaster()){
     freeList = local+(48*numMailboxes);
@@ -142,16 +107,10 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   
   // this is used in free to see if address is given by normal malloc or sccmalloc
   start = *addr; 
-  //PRT_ADR("start %x %p\n",start,start);
-  printf("start %x %p\n",start,start);
+  //PRT_ADR("start %p, freelist %p, size %zu\n",start,freeList,freeList->hdr.size);
+  fprintf(stderr,"start %p, freelist %p, size %zu\n",start,freeList,freeList->hdr.size);
   
-  //init mutex variable for the SCCMallocPtr function
-  pthread_mutex_init(&malloc_lock, NULL);
-  
-#ifdef USE_MALLOC_HOOK 
-  /* Override initializing hook from the C library. */
-  void (*__malloc_initialize_hook) (void) = NK_init_hook;
-#endif // USE_MALLOC_HOOK
+  pthread_mutex_unlock(&malloc_lock);  
 }
 
 void *SCCGetLocal(void){
@@ -160,7 +119,7 @@ void *SCCGetLocal(void){
 
 void SCCMallocStop(void)
 {
-  fprintf(stderr, "****************************\nsccmalloc stop at %f\n\n\n",SCCGetTime());
+  fprintf(stderr, "****************************\nsccmalloc stop at %f, size %zu\n\n\n",SCCGetTime(),freeList->hdr.size);
   munmap(local, SHM_MEMORY_SIZE);
   close(mem);
 }
@@ -175,7 +134,13 @@ void *SCCMallocPtr(size_t size)
   block_t *curr, *prev, *new;
 	pthread_mutex_lock(&malloc_lock);
 
-  if (freeList == NULL) fprintf(stderr, "Couldn't allocate memory freelist is NULL!\n");
+  if (freeList == NULL){
+    fprintf(stderr, "Couldn't allocate memory freelist is NULL!\n");
+    pthread_mutex_unlock(&malloc_lock);
+    exit(-1);
+    return NULL;
+  }
+  
   prev = freeList;
   curr = prev->hdr.next;
   nunits = (size + sizeof(block_t) - 1) / sizeof(block_t) + 1;
@@ -206,6 +171,7 @@ void *SCCMallocPtr(size_t size)
 				freeList = prev;
 				pthread_mutex_unlock(&malloc_lock);
         PRT_MALLOC(stderr,"SCCMalloc: returns %p at time: %f\n",(void*) (curr + 1),SCCGetTime());
+        PRT_MALLOCX1(stderr,"SCCMalloc: returns %p current size: %zu\n",(void*) (curr + 1),freeList->hdr.size);
         return (void*) (curr + 1);
 			}
 		} while (curr != freeList && (prev = curr, curr = curr->hdr.next));
@@ -213,23 +179,27 @@ void *SCCMallocPtr(size_t size)
 		pthread_mutex_unlock(&malloc_lock);
 
 		fprintf(stderr, "Couldn't allocate memory: not enough available!\n");
+    exit(-1);
 		return NULL;
 }
 
 /*
  * SCCFreePtr is used to free memory in the SHM
  */
-void SCCFreePtr(void *p)
+void SCCFreePtr(void *p){}
+void SCCFreePtr1(void *p)
 {
   // this deals with NULL or some normal malloc trying to be freed by this function
   // specially from snet-rts lexer.c
-  if(p == NULL) return;
-  
+  if(p == NULL || start > p) return;
+  /*
   if(start > p){
     PRT_MALLOC(stderr, "SCCFree going to call free of %p at %f\n",p,SCCGetTime());
     free(p);    
     return;
   }
+  */
+  
   PRT_MALLOC(stderr, "SCCFree pointer %p at %f\n",p,SCCGetTime());
   pthread_mutex_lock(&malloc_lock);
   
@@ -239,6 +209,7 @@ void SCCFreePtr(void *p)
   if (freeList == NULL) {
     freeList = block;
     freeList->hdr.next = freeList;
+    pthread_mutex_unlock(&malloc_lock);
     return;
   }
 
