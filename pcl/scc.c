@@ -79,6 +79,9 @@ unsigned int VID_word(float voltage, int domain);
 int get_divider(int tile_ID);
 int getInt(float voltage);
 
+// register for timer
+int *tlo,*thi;
+
 int node_id = -1;  // physical location
 int node_rank = -1;  // logical location
 int num_worker = -1; // number of workers including master
@@ -184,7 +187,7 @@ void printAir(){
 
 void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   //variables for the MPB init
-  int core,size, x, y, z, address, offset;
+  int core,size, x, y, z, address, offset,i;
   unsigned char cpu;
   
   InitAPI(0);
