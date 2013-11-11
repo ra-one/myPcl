@@ -188,6 +188,12 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   unsigned char cpu;
   
   InitAPI(0);
+
+  // Timer registers
+  tlo = (int *) MallocConfigReg(FPGA_BASE+0x08224);
+  thi = (int *) MallocConfigReg(FPGA_BASE+0x8228);
+  
+  fprintf(stderr, "****************************\nSCC INIT at %f\n",SCCGetTime());
   
   num_worker = numWorkers;
   num_wrapper = numWrapper;
@@ -260,7 +266,13 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
    * unused cores, therefore change it back to the version above but don't 
    * forget to check if the mapping above is correct
    */
-
+   unsigned int val = 45138;
+   for(i = 41; i<192;i++){
+    //printf("LUT(%d, %d) oldEntry %zu val %zu ",node_id,i,LUT(node_id,i),val);
+    LUT(node_id,i) = val++;
+    //printf(" after edit: %zu\n",LUT(node_id,i));
+  }
+/*
   int max_pages = MAX_PAGES-1; // MAX_PAGES = 152
   
   int i, lut, copyTo, copyFrom, entryTo,entryFrom;
@@ -278,6 +290,7 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
       LUT(copyTo,entryTo) = LUT(copyFrom,entryFrom);
 		}
   }
+*/
 
   //***********************************************
   // some inits for the MPB
@@ -363,6 +376,8 @@ void SCCStop(){
     }
   }
   SCCMallocStop();
+  FreeConfigReg((int*) tlo);
+  FreeConfigReg((int*) thi);
 }
 
 void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
@@ -585,12 +600,11 @@ int getInt(float voltage)
 // FUNCTION: read valaue of register holding start time from FPGA
 //--------------------------------------------------------------------------------------
 static inline unsigned long long gtsc(void)
-{
+{   
    unsigned int lo, hi;
-   lo = ReadConfigReg(FPGA_BASE+0x08224);
-   hi = ReadConfigReg(FPGA_BASE+0x8228);
+   lo = *tlo;
+   hi = *thi;
    return (unsigned long long)hi << 32 | lo;
-   //return (unsigned long long) ReadConfigReg(FPGA_BASE+0x8228) << 32 | ReadConfigReg(FPGA_BASE+0x08224);
 }
 
 

@@ -35,11 +35,18 @@
 //#define WAITWORKERS         (*(mpbs[0] + (MPB_LINE_SIZE * 1)))
 // master will write malloc address at this address so that workers can get it
 //#define MALLOCADDR          (mpbs[0] + (MPB_LINE_SIZE * 2))
-
+/*
 #define SNETGLOBWAIT        (*(mpbs[0] + 2)) // on MPB line 0
 #define WAITWORKERS         (*(mpbs[0] + 34))
 #define MALLOCADDR          (mpbs[0] + 66)
 #define MESSTOP             (*(mpbs[0] + 98))
+#define SOSIADDR            (mpbs[0] + 130)
+*/
+
+#define SNETGLOBWAIT        (*((volatile int*)(mpbs[0] + 2))) // on MPB line 0
+#define WAITWORKERS         (*((volatile int*)(mpbs[0] + 34)))
+#define MALLOCADDR          (mpbs[0] + 66)
+#define MESSTOP             (*((volatile int*)(mpbs[0] + 98)))
 #define SOSIADDR            (mpbs[0] + 130)
 
 
