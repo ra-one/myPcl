@@ -113,6 +113,8 @@ void change_freq(int inc);
 
 int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain);
 int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain);
+void startPowerMeasurement(int start);
+void powerMeasurement(FILE *fileHand);
 
 /* Support Functions */
 void SCCInit(int numWorkers, int numWrapper, char *hostFile);
