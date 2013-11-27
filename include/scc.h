@@ -106,6 +106,24 @@ int current_freq_div;
 
 extern int activeDomains[6];
 extern int RC_COREID[CORES];
+extern int DVFS;
+
+// allocate by source, access by sink
+typedef struct {
+  int skip_count;     //count number of output
+  int skip_update;    // skip update frequency by a number of ouput messages, should be >= window_size
+  int window_size;    // window of observing ouput messages
+  int thresh_hold;   //TODO: thresh_hold to change the freq
+  
+  double *output_interval;  // window of output interval
+  int output_index;     // index in the window of observed output rate
+  double last_output; // timestamp of last output
+
+  double input_rate;
+  double output_rate;
+  
+  int freq;
+} observer_t;
 
 void set_min_freq();
 void change_freq(int inc);
@@ -117,7 +135,7 @@ void startPowerMeasurement(int start);
 void powerMeasurement(FILE *fileHand);
 
 /* Support Functions */
-void SCCInit(int numWorkers, int numWrapper, char *hostFile);
+void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile);
 void SCCStop();
 int  SCCGetNodeID();
 int  SCCGetNodeRank();

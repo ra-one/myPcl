@@ -6,7 +6,7 @@
 #include <signal.h>
 #include <sys/mman.h>
 #include <malloc.h>
-
+#include <assert.h>
 
 #include "scc.h"
 #include <pthread.h>
@@ -35,6 +35,9 @@ static int mem;
 static block_t *freeList;
 
 uintptr_t start;
+
+static size_t memleft;
+static char *freePtr;
 
 /*
  * SCCMallocInit creates a new mapping for the SHM and sets the "addr" pointer to the beginning address of this SHM
@@ -73,18 +76,18 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 		else	munmap(local, SHM_MEMORY_SIZE);
 		
 		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
-		
+   	
 		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
 		*addr=local;
   }else{
 		PRT_ADR("WORKER MMAP\n\n");
 		local=*addr;	
-		local = mmap((void*)local,     	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
-		if (local == NULL) { fprintf(stderr, "Couldn't map memory!"); exit(-1); }
+		local = mmap((void*)local, SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
+   	if (local == NULL) { fprintf(stderr, "Couldn't map memory!"); exit(-1); }
   }  
 
   PRT_ADR("sccmalloc: addr: %p\n",*addr);
-  
+  /*
   //calculate the start-address in the SHM, depending on the max. number of participating WORKERS and the ID of the calling WORKER
   if(SCCIsMaster()){
     freeList = local+(48*numMailboxes);
@@ -111,6 +114,21 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   fprintf(stderr,"start %p, freelist %p, size %zu\n",start,freeList,freeList->hdr.size);
   
   pthread_mutex_unlock(&malloc_lock);  
+  */
+  
+  start = *addr;
+  if(SCCIsMaster()){
+    freePtr = local+((48*numMailboxes) * 2);
+    memleft = ((SHM_MEMORY_SIZE/numMailboxes)-((48*numMailboxes)*2));
+  } else {
+    freePtr = local+MEMORY_OFFSET(SCCGetNodeRank());
+    memleft = (SHM_MEMORY_SIZE/numMailboxes);
+  }
+  
+  fprintf(stderr,"start %p, freelist %p, size %zu\n",start,freePtr,memleft);
+
+  pthread_mutex_unlock(&malloc_lock); 
+  
 }
 
 void *SCCGetLocal(void){
@@ -119,7 +137,8 @@ void *SCCGetLocal(void){
 
 void SCCMallocStop(void)
 {
-  fprintf(stderr, "****************************\nsccmalloc stop at %f, size %zu\n\n\n",SCCGetTime(),freeList->hdr.size);
+  //fprintf(stderr, "****************************\nsccmalloc stop at %f, size %zu\n\n\n",SCCGetTime(),freeList->hdr.size);
+  fprintf(stderr, "****************************\nsccmalloc stop at %f, size %zu\n\n\n",SCCGetTime(),memleft);
   munmap(local, SHM_MEMORY_SIZE);
   close(mem);
 }
@@ -127,8 +146,19 @@ void SCCMallocStop(void)
 /*
  * SCCMallocPtr is used to allocate memory in the SHM
  */
-
 void *SCCMallocPtr(size_t size)
+{
+   void* ptr;
+ 	 pthread_mutex_lock(&malloc_lock);
+   assert(memleft > size+1);
+   ptr = freePtr;
+   freePtr += size+1;
+   memleft -= size+1;
+	 pthread_mutex_unlock(&malloc_lock);
+   return ptr;  
+}
+
+void *SCCMallocPtr1(size_t size)
 {
   size_t nunits;
   block_t *curr, *prev, *new;
@@ -243,10 +273,11 @@ void SCCFreePtr1(void *p)
 /*
  * used to flush the whole L2-cache
  */
-int DCMflush() {
+int DCMflush(){}
+int DCMflush1() {
    //flushes the whole L2 cache
-   write(mem,0,65536);
-//   write(mem,0,0);
+   //write(mem,0,65536);
+   //   write(mem,0,0);
    return 1;
 }
 

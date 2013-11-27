@@ -12,6 +12,8 @@
 #define PRT_MBX //
 #define USE_MALLOC_HOOK
 
+FILE *masterFile;
+
 //used to write SHM start address into MPB
 uintptr_t  addr=0x0;
 uintptr_t  *allMbox;
@@ -35,25 +37,25 @@ static triple RC_V_MHz_cap[] = {
 };
 
 // tile clock change words, assuming constant router ratio of 2 
-static unsigned int RC_frequency_change_words[][2] = {
+static unsigned int RC_frequency_change_words[][3] = {
 // rtr clock ratio, bits 25:8
-/* NOP */ {    2,   0x00000000}, /**/
-/*  1 */  {    2,   0x000038e0}, /* */
-/*  2 */  {    2,   0x000070e1}, /* 800 */
-/*  3 */  {    2,   0x0000a8e2}, /* 533 */
-/*  4 */  {    2,   0x0000e0e3}, /* 400 */
-/*  5 */  {    2,   0x000118e4}, /* 320 */
-/*  6 */  {    2,   0x000150e5}, /* 266 */
-/*  7 */  {    2,   0x000188e6}, /* 228 */
-/*  8 */  {    2,   0x0001c0e7}, /* 200 */
-/*  9 */  {    2,   0x0001f8e8}, /* 178 */
-/* 10 */  {    2,   0x000230e9}, /* 160 */
-/* 11 */  {    2,   0x000268ea}, /* 145 */
-/* 12 */  {    2,   0x0002a0eb}, /* 133 */
-/* 13 */  {    2,   0x0002d8ec}, /* 123 */
-/* 14 */  {    2,   0x000310ed}, /* 114 */
-/* 15 */  {    2,   0x000348ee}, /* 106 */
-/* 16 */  {    2,   0x000380ef}  /* 100 */
+/* NOP */ {    2,   0x00000000, 000}, /**/
+/*  1 */  {    2,   0x000038e0, 000}, /* */
+/*  2 */  {    2,   0x000070e1, 800}, /* 800 */
+/*  3 */  {    2,   0x0000a8e2, 533}, /* 533 */
+/*  4 */  {    2,   0x0000e0e3, 400}, /* 400 */
+/*  5 */  {    2,   0x000118e4, 320}, /* 320 */
+/*  6 */  {    2,   0x000150e5, 266}, /* 266 */
+/*  7 */  {    2,   0x000188e6, 228}, /* 228 */
+/*  8 */  {    2,   0x0001c0e7, 200}, /* 200 */
+/*  9 */  {    2,   0x0001f8e8, 178}, /* 178 */
+/* 10 */  {    2,   0x000230e9, 160}, /* 160 */
+/* 11 */  {    2,   0x000268ea, 145}, /* 145 */
+/* 12 */  {    2,   0x0002a0eb, 133}, /* 133 */
+/* 13 */  {    2,   0x0002d8ec, 123}, /* 123 */
+/* 14 */  {    2,   0x000310ed, 114}, /* 114 */
+/* 15 */  {    2,   0x000348ee, 106}, /* 106 */
+/* 16 */  {    2,   0x000380ef, 100}  /* 100 */
 };
 /*
 static int RC_domains[6][4] = {
@@ -61,7 +63,7 @@ static int RC_domains[6][4] = {
     {24, 26, 36, 38}, {28, 30, 40, 42},{32, 34, 44, 46}
 };*/
 
-static const int RC_domains[6][4]={
+static const int RC_domains[6][4]={ // 4 5 7 0 1 3
   {0, 1, 6, 7},    {2, 3, 8, 9},    {4, 5, 10, 11},
   {12, 13, 18, 19},{14, 15, 20, 21},{16, 17, 22, 23}
 };
@@ -86,12 +88,14 @@ unsigned int VID_word(float voltage, int domain);
 int get_divider(int tile_ID);
 int getInt(float voltage);
 double readVCC(int domain); // takes logical domain gives value for physical domain
+static int read_current_frequency(int tileId);
 
 // register for timer
 int *tlo,*thi;
 double startTime;
 
 //register for voltages
+int DVFS;
 int *C3v3SCC, *V3v3SCC;
 
 int node_id = -1;  // physical location
@@ -180,7 +184,7 @@ static void my_free_hook1 (void *ptr, const void *caller)
 //////////////////////////////////////////////////////////////////////////////////////// 
 // End of Malloc / Free hooks
 //////////////////////////////////////////////////////////////////////////////////////// 
-
+/*
 void printAir1(){
   unsigned char cpu,i;
   for (i = 0; i < 49; i+=48){
@@ -193,17 +197,22 @@ void printAir1(){
 void printAir(){
   unsigned char cpu;
   for (cpu = 0; cpu < 16; cpu++){
-   printf("atomic_inc_regs[%d %p]\n",cpu,atomic_inc_regs[cpu]);
+   printf("atomic_inc_regs[%d %p]\n",cpu,(void*)atomic_inc_regs[cpu]);
   }
 }
-
-void SCCInit(int numWorkers, int numWrapper, char *hostFile){
+*/
+void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
   //variables for the MPB init
   int core,size, x, y, z, address, offset,i;
   unsigned char cpu;
   
   InitAPI(0);
 
+  masterFile = fopen("out/master.txt", "w");
+  if (masterFile == NULL)fprintf(stderr, "Can't open output file for master!\n");
+  
+  DVFS = enableDVFS;
+  
   // Timer registers
   tlo = (int *) MallocConfigReg(FPGA_BASE+0x08224);
   thi = (int *) MallocConfigReg(FPGA_BASE+0x8228);
@@ -335,7 +344,7 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
     SNETGLOBWAIT = 1; 
     
     RPC_virtual_address = (t_vintp) MallocConfigReg(RPC_BASE);
-    fprintf(stderr,"RPCBASE %p vaddr %p\n",RPC_BASE,RPC_virtual_address);
+    //fprintf(stderr,"RPCBASE %p vaddr %p\n",RPC_BASE,RPC_virtual_address);
     for (i=0; i<CORES/2; i++) {
       x = i%6; y = i/6; 
       fChange_vAddr[i] = (t_vintp) MallocConfigReg(CRB_ADDR(x,y)+TILEDIVIDER); 
@@ -343,9 +352,12 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
     // get values for current voltage and freq
     //get_divider(node_id);
     for (i=0; i<RC_VOLTAGE_DOMAINS; i++){
-        //RC_current_frequency_divider = get_divider(node_id);
-        RC_current_val[i].current_volt_level = 4; //set to 1.1 default
-        RC_current_val[i].current_freq_div = 3; //set to 533MHz default
+      //RC_current_frequency_divider = get_divider(node_id);
+      //RC_current_val[i].current_volt_level = 4; //set to 1.1 default
+      //RC_current_val[i].current_freq_div = 3; //set to 533MHz default
+      int fdiv = read_current_frequency(RC_domains[i][0]);
+      RC_current_val[i].current_freq_div = fdiv;
+      RC_current_val[i].current_volt_level = RC_voltage_level(fdiv); 
     }
   }else{
     // worker waits untill it gets address to map shared memory from master
@@ -367,8 +379,8 @@ void SCCInit(int numWorkers, int numWrapper, char *hostFile){
   
   //unlock all workers - only master executes this
   if(SCCIsMaster()){
-    // set all inactive domains to minimum
-    set_min_freq();
+    // set all inactive domains to minimum if DVFS is enabled
+    if(DVFS) set_min_freq();
     WAITWORKERS = num_worker;
   }
   FOOL_WRITE_COMBINE;
@@ -390,15 +402,17 @@ void SCCStop(){
     FreeConfigReg((int*) locks[cpu]);
     FreeConfigReg((int*) luts[cpu]);
     if(SCCIsMaster()){
-      for (offset=0; offset < 0x2000; offset+=8)
-      *(volatile unsigned long long int*)(mpbs[cpu]+offset) = 0;
-    }
-    MPBunalloc(&mpbs[cpu]);
-  }
-  if(SCCIsMaster()){ // only master free this
-    FreeConfigReg((int*) RPC_virtual_address);
-    for (i=0; i<CORES/2; i++) {
-      FreeConfigReg((int*) fChange_vAddr[i]);
+      for (offset=0; offset < 0x2000; offset+=8){
+        *(volatile unsigned long long int*)(mpbs[cpu]+offset) = 0;
+      }      
+      MPBunalloc(&mpbs[cpu]);      
+      // only master free this
+      FreeConfigReg((int*) RPC_virtual_address);
+      for (i=0; i<CORES/2; i++) {
+        FreeConfigReg((int*) fChange_vAddr[i]);
+      }
+      fclose(masterFile);
+      //system("chmod 666 out/*");
     }
   }
   SCCMallocStop();
@@ -448,15 +462,28 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
 //////////////////////////////////////////////////////////////////////////////////////// 
 // Start of Power and freq functions // virtual domain is passed in
 //////////////////////////////////////////////////////////////////////////////////////// 
+static int read_current_frequency(int tileId){
+  int i;
+  unsigned int lower_bits = (*(fChange_vAddr[tileId]))&((1<<8)-1);
+  unsigned int orig_bits = ((*(fChange_vAddr[tileId])) - lower_bits) >> 8;
+
+  for(i=1; i<=16; i++) {
+    if(orig_bits == RC_frequency_change_words[i][1]){
+      return i;
+    }
+  }
+  return -1;
+}
+
 double readVCC(int domain){
-  fprintf(stderr,"domain %d PD %d, physical 0x%x logical %p\n",domain,PD[domain],VCCADDRP[domain],VCCADDRV[domain]);
+  //fprintf(stderr,"domain %d PD %d, physical 0x%x logical %p\n",domain,PD[domain],VCCADDRP[domain],VCCADDRV[domain]);
   unsigned int val = *(int*)(VCCADDRV[domain]);
   return (double)val * 0.0000251770;
 }
 
 void startPowerMeasurement(int start){
-  if(start) writeFpgaGrb(DVFS_CONFIG, 0x00000a80 );
-  else      writeFpgaGrb(DVFS_CONFIG, 0x00000800 );
+  //if(start) writeFpgaGrb(DVFS_CONFIG, 0x00000a80 );
+  //else      writeFpgaGrb(DVFS_CONFIG, 0x00000800 );
 }
 
 void powerMeasurement(FILE *fileHand){
@@ -466,26 +493,40 @@ void powerMeasurement(FILE *fileHand){
   double volt = (double)volti * 0.0002500000; //0.004;
   double current = (double)currenti * 0.0062490250; //0.0990099;
   
-  fprintf(fileHand,"V %f \tA %f \tT %f\n", volt, current,SCCGetTime());
+  //fprintf(fileHand,"V %f \tA %f \tT %f\n", volt, current,SCCGetTime());
+  fprintf(fileHand,"V,%f,A,%f,", volt, current);
   fflush(fileHand);
-  fprintf(stderr,"V %f \tA %f\n", volt, current);
+  //fprintf(stderr,"V %f \tA %f\n", volt, current);
 }
 
 void set_min_freq(){
-  int reqFreqDiv = 8,i,new_Fdiv,new_Vlevel;;
+  int reqFreqDiv = 15,i,new_Fdiv,new_Vlevel;;
   
   for(i=1;i<RC_VOLTAGE_DOMAINS;i++){
     if(activeDomains[i] != 1){
       set_freq_volt_level(reqFreqDiv, &new_Fdiv, &new_Vlevel, i);
-      fprintf(stderr,"domain %d PD %d is inactive, set to lowest frequency\n\n\n",i,PD[i]);
-      fflush(stderr);
+      fprintf(stderr,"domain %d PD %d is inactive, set to lowest frequency %d\n\n\n",i,PD[i],RC_frequency_change_words[reqFreqDiv][2]);
+      fprintf(masterFile,"domain %d PD %d is inactive, set to lowest frequency %d\n\n\n",i,PD[i],RC_frequency_change_words[reqFreqDiv][2]);
+      fflush(masterFile);
     }
   }
 }
 
 void change_freq(int inc){
-  // do not change anything on active domain1 as it runs master
+  static int first=1;
+  static observer_t *obs;
+  
+  if(!DVFS){
+    fprintf(masterFile,"Frequency can not be changed, DVFS is disabled\n");
+    return;
+  }
+  
+  // do not change anything on active domain0 as it runs master
   int reqFreqDiv = -1,i,retVal;
+  
+  if(inc) fprintf(masterFile,"\nMaster: increase frequency\n");
+  else    fprintf(masterFile,"\nMaster: decrease frequency\n");
+  fflush(masterFile);
   
   for(i=1;i<RC_VOLTAGE_DOMAINS;i++){
     if(activeDomains[i] == 1){
@@ -497,15 +538,35 @@ void change_freq(int inc){
       i = RC_VOLTAGE_DOMAINS+1;
     }
   }
+  
+  if (reqFreqDiv > RC_MAX_FREQUENCY_DIVIDER){
+    fprintf(masterFile,"Frequency can not be changed at this point, already min\n");
+    return;
+  } else if (reqFreqDiv < RC_MIN_FREQUENCY_DIVIDER){
+    fprintf(masterFile,"Frequency can not be changed at this point, already max\n");
+    return;
+  }
+  
+  // get observer address
+  if(first && SOSIADDR !=0) { first=0; memcpy((void*)&obs, (const void*)SOSIADDR, sizeof(observer_t*));}
+  //start timer for message skip in sink
+  if(obs != NULL) obs->skip_count = 0;
+  
   int new_Fdiv,new_Vlevel;
   
   for(i=1;i<RC_VOLTAGE_DOMAINS;i++){
     if(activeDomains[i] == 1){
       retVal = set_freq_volt_level(reqFreqDiv, &new_Fdiv, &new_Vlevel, i);
-      if(retVal == -1 ) fprintf(stderr,"domain %d PD %d frequency can not be changed\n\n\n",i,PD[i]);
-      else              fprintf(stderr,"domain %d PD %d frequency changed\n\n\n",i,PD[i]);
+      if(retVal == -1 ) {
+        fprintf(stderr,"domain %d PD %d frequency can not be changed\n\n\n",i,PD[i]);
+        fprintf(masterFile,"domain %d PD %d frequency can not be changed\n",i,PD[i]);
+      } else {
+        fprintf(stderr,"domain %d PD %d frequency changed to %d\n\n\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2]);
+        fprintf(masterFile,"domain %d PD %d frequency %d time %f\n\n\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2],SCCGetTime());
+      }
     }
-  }
+  }// change freq in obs for sink
+  if(obs != NULL) obs->freq = RC_frequency_change_words[new_Fdiv][2];
 }
 
 int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain) {
@@ -549,7 +610,7 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
   
   // check volt level support requested freq
   if (Vlevel < 0){
-    fprintf(stderr,"Voltage leve is low for given divider\n");
+    fprintf(stderr,"Voltage level is low for given divider\n");
     *new_Fdiv = -1;
     *new_Vlevel = -1;
     return(-1);
@@ -564,16 +625,19 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
     for(tile=0; tile < 4; tile++) {
       //RC_set_frequency_divider(tile, Fdiv);
       RC_set_frequency_divider(RC_domains[domain][tile],Fdiv);
-      fprintf(stderr,"domain %d PD %d tile %d\n",domain,PD[domain],RC_domains[domain][tile]);
+      //fprintf(stderr,"domain %d PD %d tile %02d\n",domain,PD[domain],RC_domains[domain][tile]);
     }
     RC_current_val[domain].current_freq_div = Fdiv;
   } 
   
   // write the VID word to RPC, need to send in physical domain
   unsigned int VID = VID_word(RC_V_MHz_cap[Vlevel].volt, PD[domain]);
-  //*RPC_virtual_address = VID;
+  *RPC_virtual_address = VID;
+  *RPC_virtual_address = VID;
+  *RPC_virtual_address = VID;
   
-  fprintf(stderr,"wrote 0x%x to RPC for domain %d PD %d\n",VID,domain,PD[domain]);
+  fprintf(masterFile,"wrote 0x%x to RPC for domain %d PD %d\n",VID,domain,PD[domain]);
+  fflush(masterFile);
   
   // set newVolt to requested so we can check later 
   int oldVolti, newVolti, changed;
@@ -581,9 +645,10 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
   oldVolti = getInt(RC_V_MHz_cap[RC_current_val[domain].current_volt_level].volt);
   newVolti = getInt(RC_V_MHz_cap[Vlevel].volt);
   
-  fprintf(stderr,"in loop old %d new %d\n",oldVolti,newVolti);
+  fprintf(masterFile,"in loop old %d new %d\n",oldVolti,newVolti);
+  fflush(masterFile);
   volRead = readVCC(domain);
-/* 
+ 
   // read status register untill value reflects change
   do{
     //volRead = readStatus(VCCADDR[domain],0.0000251770);
@@ -592,7 +657,8 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
     else if(newVolti < oldVolti) { changed = newVolti >= getInt(volRead); }
     else if(newVolti == oldVolti){ changed = 1; }
   }while(!changed);
-*/ 
+  fprintf(masterFile,"Volt int after change:  %f, %d\n",volRead,getInt(volRead));
+  fflush(masterFile);
   
   RC_current_val[domain].current_volt_level = Vlevel;
   
@@ -603,7 +669,7 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
     for(tile=0; tile < 4; tile++) {
       //RC_set_frequency_divider(tile, Fdiv);
       RC_set_frequency_divider(RC_domains[domain][tile],Fdiv);
-      fprintf(stderr,"domain %d PD %d tile %d\n",domain,PD[domain],RC_domains[domain][tile]);
+      //fprintf(stderr,"domain %d PD %d tile %02d\n",domain,PD[domain],RC_domains[domain][tile]);
     }
     RC_current_val[domain].current_freq_div = Fdiv;
   }
@@ -636,8 +702,9 @@ int RC_voltage_level(int Fdiv) {
 
 // set frequency divider on a single tile 
 int RC_set_frequency_divider(int tile_ID, int Fdiv) {
-  //*(fChange_vAddr[tile_ID]) = FID_word(Fdiv, tile_ID);
-  fprintf(stderr,"FID_word 0x%x written for tile %d at address %p\n",FID_word(Fdiv, tile_ID),tile_ID,fChange_vAddr[tile_ID]);
+  *(fChange_vAddr[tile_ID]) = FID_word(Fdiv, tile_ID);
+  //fprintf(stderr,"FID_word 0x%x written for tile %02d\n",FID_word(Fdiv, tile_ID),tile_ID);
+  //fprintf(masterFile,"FID_word 0x%x %d written for tile %02d\n",FID_word(Fdiv, tile_ID),RC_frequency_change_words[Fdiv][2],tile_ID);
   return (1);
 }
 
