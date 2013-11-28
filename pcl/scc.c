@@ -288,7 +288,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
 
   if(!SCCIsMaster()){ // should be false and only worker will wait here
     PRT_SYNC("Wait for MASTER'S LUT MAPPING!!! \n");
-    while(WAITWORKERS != num_worker);
+    while(WAITWORKERS != WAITWORKERSVAL);
     PRT_SYNC("MASTER'S LUT MAPPING DONE!!! \n");
   }
   /*
@@ -341,7 +341,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
     memcpy((void*)MALLOCADDR, (const void*)&addr, sizeof(uintptr_t));
   
     // this makes snet thread wait for lpel to finish
-    SNETGLOBWAIT = 1; 
+    //SNETGLOBWAIT = 1; 
     
     RPC_virtual_address = (t_vintp) MallocConfigReg(RPC_BASE);
     //fprintf(stderr,"RPCBASE %p vaddr %p\n",RPC_BASE,RPC_virtual_address);
@@ -381,7 +381,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
   if(SCCIsMaster()){
     // set all inactive domains to minimum if DVFS is enabled
     if(DVFS) set_min_freq();
-    WAITWORKERS = num_worker;
+    WAITWORKERS = WAITWORKERSVAL;
   }
   FOOL_WRITE_COMBINE;
 }
@@ -402,9 +402,10 @@ void SCCStop(){
     FreeConfigReg((int*) locks[cpu]);
     FreeConfigReg((int*) luts[cpu]);
     if(SCCIsMaster()){
+    /*
       for (offset=0; offset < 0x2000; offset+=8){
         *(volatile unsigned long long int*)(mpbs[cpu]+offset) = 0;
-      }      
+      }      */
       MPBunalloc(&mpbs[cpu]);      
       // only master free this
       FreeConfigReg((int*) RPC_virtual_address);

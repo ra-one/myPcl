@@ -265,7 +265,7 @@ typedef volatile unsigned int* t_vintp;
 #define DVFS_TIMER_TERTIARY   0x08564
 
 #define TILEDIVIDER           0x00000080
-
+/*
 // #########################################################################################
 //  _____                 _   _
 // |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
@@ -274,7 +274,7 @@ typedef volatile unsigned int* t_vintp;
 // |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
 // 
 // #########################################################################################
-
+*/
 // InitAPI opens the RCKMEM device drivers. This routine needs to be invoked
 // once before using any other API functions! The successmessage can be disabled.
 // 

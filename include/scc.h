@@ -43,6 +43,8 @@
 #define SOSIADDR            (mpbs[0] + 130)
 */
 
+#define SNETGLOBWAITVAL      6
+#define WAITWORKERSVAL       9
 #define SNETGLOBWAIT        (*((volatile int*)(mpbs[0] + 2))) // on MPB line 0
 #define WAITWORKERS         (*((volatile int*)(mpbs[0] + 34)))
 #define MALLOCADDR          (mpbs[0] + 66)

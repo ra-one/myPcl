@@ -125,7 +125,8 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
     memleft = (SHM_MEMORY_SIZE/numMailboxes);
   }
   
-  fprintf(stderr,"start %p, freelist %p, size %zu\n",start,freePtr,memleft);
+  fprintf(stderr,"start %p, freelist %p, size B:%zu, KB:%f, MB:%f\
+          \n",start,freePtr,memleft,(double)(memleft/1024),(double)(memleft/(1024*1024)));
 
   pthread_mutex_unlock(&malloc_lock); 
   
@@ -138,7 +139,8 @@ void *SCCGetLocal(void){
 void SCCMallocStop(void)
 {
   //fprintf(stderr, "****************************\nsccmalloc stop at %f, size %zu\n\n\n",SCCGetTime(),freeList->hdr.size);
-  fprintf(stderr, "****************************\nsccmalloc stop at %f, size %zu\n\n\n",SCCGetTime(),memleft);
+  fprintf(stderr, "****************************\nsccmalloc stop at %f, size B:%zu, KB:%f, MB:%f\
+          \n\n\n",SCCGetTime(),memleft,(double)(memleft/1024),(double)(memleft/(1024*1024)));
   munmap(local, SHM_MEMORY_SIZE);
   close(mem);
 }
@@ -154,11 +156,16 @@ void *SCCMallocPtr(size_t size)
    ptr = freePtr;
    freePtr += size+1;
    memleft -= size+1;
+   //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left MB:%f\n",size,ptr,(double)(memleft/(1024*1024)));
 	 pthread_mutex_unlock(&malloc_lock);
    return ptr;  
 }
 
-void *SCCMallocPtr1(size_t size)
+void SCCFreePtr(void *p){}
+int DCMflush(){}
+
+#ifdef USE_OLD_MALLOC
+void *SCCMallocPtr(size_t size)
 {
   size_t nunits;
   block_t *curr, *prev, *new;
@@ -216,8 +223,7 @@ void *SCCMallocPtr1(size_t size)
 /*
  * SCCFreePtr is used to free memory in the SHM
  */
-void SCCFreePtr(void *p){}
-void SCCFreePtr1(void *p)
+void SCCFreePtr(void *p)
 {
   // this deals with NULL or some normal malloc trying to be freed by this function
   // specially from snet-rts lexer.c
@@ -273,12 +279,11 @@ void SCCFreePtr1(void *p)
 /*
  * used to flush the whole L2-cache
  */
-int DCMflush(){}
-int DCMflush1() {
+int DCMflush() {
    //flushes the whole L2 cache
    //write(mem,0,65536);
    //   write(mem,0,0);
    return 1;
 }
-
+#endif //USE_OLD_MALLOC
 
