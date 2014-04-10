@@ -10,7 +10,9 @@
 #define PRT_SYNC //
 #define PRT_ADR //
 #define PRT_MBX //
+#define PRT_FILE //
 #define USE_MALLOC_HOOK
+//#undef USE_MALLOC_HOOK
 
 FILE *masterFile;
 
@@ -21,6 +23,7 @@ uintptr_t  *allMbox;
 // global variables for the MPB, LUT, PINS, LOCKS and AIR
 t_vcharp mpbs[CORES];
 t_vcharp locks[CORES];
+t_vcharp newLock;
 volatile int *irq_pins[CORES];
 volatile uint64_t *luts[CORES];
 AIR atomic_inc_regs[2*CORES];
@@ -117,67 +120,28 @@ void *mallocStart;
 static int mCount = 0;
 /* Prototypes for our hooks.  */
 static void my_init_hook (void);
-static void *my_malloc_hook (size_t, const void *);
 static void my_free_hook (void*, const void *);
 
 typeof(__free_hook) old_free_hook;
-typeof(__malloc_hook) old_malloc_hook;
-
 
 /* Override initializing hook from the C library. */
 void (*__malloc_initialize_hook) (void) = my_init_hook;
 
 static void my_init_hook (void)
 {
- mallocStart = malloc(sizeof(char));
- printf("mallocStart %p\n",mallocStart);
-
-
- old_malloc_hook = __malloc_hook;
  old_free_hook = __free_hook;
- __malloc_hook = my_malloc_hook;
  __free_hook = my_free_hook;
-}
-
-static void *my_malloc_hook (size_t size, const void *caller)
-{
- mCount = mCount+1;
- void *result;
- /* Restore all old hooks */
- __malloc_hook = old_malloc_hook;
- __free_hook = old_free_hook;
- /* Call recursively */
- result = malloc (size);
- /* Save underlying hooks */
- old_malloc_hook = __malloc_hook;
- old_free_hook = __free_hook;
- /* printf might call malloc, so protect it too. */
- //printf ("malloc (%u) returns %p, mCount %d, caller %p\n", (unsigned int) size, result,(mCount-1),caller);
- /* Restore our own hooks */
- __malloc_hook = my_malloc_hook;
- __free_hook = my_free_hook;
- return result;
 }
 
 static void my_free_hook (void *ptr, const void *caller)
-{}
-
-static void my_free_hook1 (void *ptr, const void *caller)
 {
+  mCount++;
  /* Restore all old hooks */
- __malloc_hook = old_malloc_hook;
  __free_hook = old_free_hook;
- printf ("WILL free pointer %p\n", ptr);
+ printf ("mcount %d WILL free pointer %p\n",mCount, ptr);
  /* Call recursively */
- if(ptr != NULL && mallocStart > ptr)  { printf("in free pointer %p from another CORE\n", ptr); }
- //else                                  { free (ptr); }
- /* Save underlying hooks */
- old_malloc_hook = __malloc_hook;
- old_free_hook = __free_hook;
- /* printf might call free, so protect it too. */
- printf ("free pointer %p\n", ptr);
+  free(ptr);
  /* Restore our own hooks */
- __malloc_hook = my_malloc_hook;
  __free_hook = my_free_hook;
 }
 #endif // USE_MALLOC_HOOK
@@ -201,6 +165,31 @@ void printAir(){
   }
 }
 */
+
+void mapMPB(){
+  int cpu, x, y, z, address;
+  for (cpu = 0; cpu < 2; cpu++){
+    x = X_PID(cpu);
+    y = Y_PID(cpu);
+    z = Z_PID(cpu);
+
+    if (cpu == node_id) address = CRB_OWN;
+    else address = CRB_ADDR(x, y);
+
+    //MPB allocation
+    MPBalloc(&mpbs[cpu], x, y, z, cpu == node_id);
+    printf("scc.c: mpbs[%d] = %p\n",cpu,mpbs[cpu]);
+  }
+}
+
+
+void unmapMPB(){
+  int cpu;
+  for (cpu = 0; cpu < 2; cpu++){ 
+    MPBunalloc( &mpbs[cpu]);
+  }
+}
+
 void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
   //variables for the MPB init
   int core,size, x, y, z, address, offset,i;
@@ -250,18 +239,22 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
     else address = CRB_ADDR(x, y);
 
     //LUT, PINS, LOCK allocation
-    irq_pins[cpu] = MallocConfigReg(address + (z ? GLCFG1 : GLCFG0));
+    //irq_pins[cpu] = MallocConfigReg(address + (z ? GLCFG1 : GLCFG0));
     luts[cpu] = (uint64_t*) MallocConfigReg(address + (z ? LUT1 : LUT0));
     locks[cpu] = (t_vcharp) MallocConfigReg(address + (z ? LOCK1 : LOCK0));
+    //if(cpu == 10) newLock = (t_vcharp) MallocConfigReg(address + (z ? LOCK1 : LOCK0));
     
     //MPB allocation
-    MPBalloc(&mpbs[cpu], x, y, z, cpu == node_id);
+    if (cpu < 2){
+      MPBalloc(&mpbs[cpu], x, y, z, cpu == node_id);
+      printf("scc.c: mpbs[%d] = %p\n",cpu,mpbs[cpu]);
     
-    // clear MPB
-    if(SCCIsMaster()){
-      for (offset=0; offset < 0x2000; offset+=8)
-      *(volatile unsigned long long int*)(mpbs[cpu]+offset) = 0;
-    }     
+      // clear MPB
+      if(SCCIsMaster()){
+        for (offset=0; offset < 0x2000; offset+=8)
+        *(volatile unsigned long long int*)(mpbs[cpu]+offset) = 0;
+      }
+    }      
     
     //FIRST SET OF AIR
     atomic_inc_regs[cpu].counter = (int *) MallocConfigReg(air_baseE + (8*cpu));
@@ -276,6 +269,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
       *atomic_inc_regs[cpu].init = 0;
       *atomic_inc_regs[CORES+cpu].init = 0;
       unlock(cpu);
+      //if(cpu == 10) unlock(cpu);
     }
   } //end for
   //***********************************************
@@ -300,8 +294,9 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
    * forget to check if the mapping above is correct
    */
    unsigned int val = 45138;
-   for(i = 41; i<192;i++){
+   for(i = 132; i<190;i++){//for(i = 41; i<192;i++){
     //printf("LUT(%d, %d) oldEntry %zu val %zu ",node_id,i,LUT(node_id,i),val);
+    if(i == 161) val = 307528;
     LUT(node_id,i) = val++;
     //printf(" after edit: %zu\n",LUT(node_id,i));
   }
@@ -338,6 +333,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
   if(SCCIsMaster()){ // only master executes this code
     SCCMallocInit((void *)&addr,num_mailboxes);
     PRT_ADR("addr: %p\n",(void*)addr);
+    printf("addr: %p\n",(void*)addr);
     memcpy((void*)MALLOCADDR, (const void*)&addr, sizeof(uintptr_t));
   
     // this makes snet thread wait for lpel to finish
@@ -363,10 +359,14 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
     // worker waits untill it gets address to map shared memory from master
     memcpy((void*)&addr, (const void*)MALLOCADDR, sizeof(uintptr_t));
     PRT_ADR("addr: %p\n",(void*)addr);
+    printf("addr: %p\n",(void*)addr);
+    //unmapMPB();
     SCCMallocInit((void *)&addr,num_mailboxes);
+    //mapMPB();
   }
 
   //unlock(node_id);
+  PRT_MBX("scc.c: my node ID: %d, rank %d\n",node_id,node_rank);
   
   //assign mailbox address into array
   allMbox = SCCMallocPtr (sizeof(uintptr_t)*num_mailboxes);  
@@ -380,10 +380,13 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
   //unlock all workers - only master executes this
   if(SCCIsMaster()){
     // set all inactive domains to minimum if DVFS is enabled
+    //release_lock();
     if(DVFS) set_min_freq();
     WAITWORKERS = WAITWORKERSVAL;
   }
   FOOL_WRITE_COMBINE;
+  //while(1){SCCMallocPtr(1000*sizeof(char));}
+  printf("scc.c: lock address %p\n",newLock);
 }
 
 //--------------------------------------------------------------------------------------
@@ -392,40 +395,44 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
 void SCCStop(){
   unsigned char cpu;
   int i,offset;
-  double stopTime;
-  
-  FreeConfigReg((int*) air_baseE);
-  FreeConfigReg((int*) air_baseF);  
+  double stopTime; 
   
   for (cpu = 0; cpu < 48; cpu++){
-    FreeConfigReg((int*) irq_pins[cpu]);
-    FreeConfigReg((int*) locks[cpu]);
+    //FreeConfigReg((int*) irq_pins[cpu]);
+    //FreeConfigReg((int*) locks[cpu]);
     FreeConfigReg((int*) luts[cpu]);
-    if(SCCIsMaster()){
-    /*
-      for (offset=0; offset < 0x2000; offset+=8){
-        *(volatile unsigned long long int*)(mpbs[cpu]+offset) = 0;
-      }      */
-      MPBunalloc(&mpbs[cpu]);      
-      // only master free this
-      FreeConfigReg((int*) RPC_virtual_address);
-      for (i=0; i<CORES/2; i++) {
-        FreeConfigReg((int*) fChange_vAddr[i]);
-      }
-      fclose(masterFile);
-      //system("chmod 666 out/*");
-    }
+    //MPBunalloc( &mpbs[cpu]);
+    
+    //SECOND SET OF AIR
+    FreeConfigReg((int*) atomic_inc_regs[cpu].counter);
+    FreeConfigReg((int*) atomic_inc_regs[cpu].init);
+    
+    //SECOND SET OF AIR
+    FreeConfigReg((int*) atomic_inc_regs[CORES+cpu].counter);
+    FreeConfigReg((int*) atomic_inc_regs[CORES+cpu].init);
   }
   SCCMallocStop();
+  if(SCCIsMaster()){
+    FreeConfigReg((int*) RPC_virtual_address);
+    for (i=0; i<CORES/2; i++) {
+      FreeConfigReg((int*) fChange_vAddr[i]);
+    }
+  }
   
   stopTime = SCCGetTime();
+  
   fprintf(stderr, "************************************************************\n");
   fprintf(stderr, "\tStart Time: %f\n\tStop Time: %f\n\tTotal Runtime: %f\n",startTime,stopTime,stopTime-startTime);
   fprintf(stderr, "************************************************************\n");
+  
   FreeConfigReg((int*) tlo);
   FreeConfigReg((int*) thi);
   FreeConfigReg((int*) V3v3SCC);
   FreeConfigReg((int*) C3v3SCC);
+  
+  for(i=0;i<6;i++){
+    FreeConfigReg((int*)VCCADDRV[i]);
+  }
 }
 
 void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
@@ -433,7 +440,7 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
   int np,cid;
   char * line = NULL;
   size_t len = 0;
-  
+ 
   fd = fopen (hostFile,"r");
   
   // fill with invalid value
@@ -441,10 +448,15 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
   
 	for(np=0;np<(numWorkers+numWrapper);np++){
 	  getline(&line,&len,fd);
-    RC_COREID[np] = atoi(line);
+    int l = atoi(line);
+    PRT_FILE("np %d, line %d\n",np,l);
+    //printf("SCC RC np %d, line %d\n",np,l);
+    RC_COREID[np] = l;
     if(np == 0) master_id = RC_COREID[np]; // set master id
     // node_rank is virtual address
     if(RC_COREID[np] == node_id) node_rank = np;
+    PRT_FILE("np %d, RC_COREID[%d] %d, node_id %d, RC_COREID[%d]==node_id %d\
+            \n\n",np,np,RC_COREID[np],node_id,np,(RC_COREID[np] == node_id));
 	}
    
   fclose(fd);
@@ -740,7 +752,7 @@ int getInt(float voltage)
 //////////////////////////////////////////////////////////////////////////////////////// 
 
 //--------------------------------------------------------------------------------------
-// FUNCTION: read valaue of register holding start time from FPGA
+// FUNCTION: read value of register holding start time from FPGA
 //--------------------------------------------------------------------------------------
 static inline unsigned long long gtsc(void)
 {   
@@ -848,3 +860,40 @@ void atomic_writeR(AIR *reg, int value)
   (*reg->init) = value;
 }
 
+//--------------------------------------------------------------------------------------
+// FUNCTION: acquire_lock and release_lock for atomic.h in LPEL
+//--------------------------------------------------------------------------------------
+// from Baremichael scc.c
+//--------------------------------------------------------------------------------------
+void acquire_lock()
+{
+	int tile, core;
+	void *crb_base;
+	volatile unsigned char *lock;
+
+	tile = 10 / 2;
+	core = 10 % 2;
+
+	crb_base = (void *)CRB_ADDR(tile % 6, tile / 6); 
+	lock = (char *)((ulong)crb_base + (core ? LOCK1 : LOCK0));
+
+	/* The LOCK bit is clear-on-read i.e. we have the lock when reading a '1' 
+	*/
+	while (!(*lock & 0x1)) ; // might want to sleep or something? 
+}
+
+void release_lock()
+{
+	int tile, core;
+	void *crb_base;
+	volatile unsigned char *lock;
+
+	tile = 10 / 2;
+	core = 10 % 2;
+
+	crb_base = (void *)CRB_ADDR(tile % 6, tile / 6); 
+	lock = (char *)((ulong)crb_base + (core ? LOCK1 : LOCK0));
+
+	/* The LOCK bit is set by writing to the register */
+	*lock = 0;
+}

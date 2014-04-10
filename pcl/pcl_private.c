@@ -72,10 +72,9 @@ static __declspec(thread) cothread_ctx *tctx;
 
 int co_thread_init(void)
 {
-	if ((tctx = (cothread_ctx *)
-	     //malloc(sizeof(cothread_ctx))) == NULL) {
-		SCCMallocPtr(sizeof(cothread_ctx));
-         	perror("allocating context");
+	//if ((tctx = (cothread_ctx *)malloc(sizeof(cothread_ctx))) == NULL) {
+	if ((tctx = (cothread_ctx *)SCCMallocPtr(sizeof(cothread_ctx))) == NULL) {
+        perror("allocating context");
 		return -1;
 	}
 	memset(tctx, 0, sizeof(*tctx));
@@ -166,6 +165,12 @@ cothread_ctx *co_get_thread_ctx(void)
 	 * Even in MT mode, allows for the main thread to not call
 	 * the co_thread_init()/co_thread_cleanup() functions.
 	 */
+	if(tctx != NULL){
+		printf("get thrd cntx will return ctx %p\n",tctx);
+	} else {
+		printf("get thrd cntx will return glbl %p\n",co_get_global_ctx());
+	}
+
 	return tctx != NULL ? tctx: co_get_global_ctx();
 }
 

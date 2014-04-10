@@ -11,6 +11,12 @@
 #include "scc.h"
 #include <pthread.h>
 
+#define SMC_PAGE_OFFSET	8
+/// PCD (set: no cache; clear: cachable)
+#define SMC_PAGE_PCD	(0x010 << SMC_PAGE_OFFSET)
+/// Judge whether need to change the cache behavior
+#define SMC_PAGE_SET	(1 << (SMC_PAGE_OFFSET - 1))
+
 #define PRT_ADR //
 #define PRT_MALLOC //
 #define PRT_MALLOCX //
@@ -70,6 +76,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   
 	if (*addr==0x0){
 		PRT_ADR("MASTER MMAP\n\n");
+      void *mmap(void *addr, size_t length, int prot, int flags,int fd, off_t offset);
 		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, alignedAddr);
 		
 		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
@@ -78,12 +85,25 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
    	
 		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
+    /*
+    // Set memory as un-cached
+    if (mprotect((void *) local, SHM_MEMORY_SIZE, SMC_PAGE_PCD | SMC_PAGE_SET) == -1) {
+        fprintf(stderr, "Fail to set (%p, %zu) as un-cached!\n", local, SHM_MEMORY_SIZE);
+        exit(1);
+    }*/
+    
 		*addr=local;
   }else{
 		PRT_ADR("WORKER MMAP\n\n");
 		local=*addr;	
 		local = mmap((void*)local, SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
    	if (local == NULL) { fprintf(stderr, "Couldn't map memory!"); exit(-1); }
+   /*
+    // Set memory as un-cached
+    if (mprotect((void *) local, SHM_MEMORY_SIZE, SMC_PAGE_PCD | SMC_PAGE_SET) == -1) {
+        fprintf(stderr, "Fail to set (%p, %zu) as un-cached!\n", local, SHM_MEMORY_SIZE);
+        exit(1);
+    }*/
   }  
 
   PRT_ADR("sccmalloc: addr: %p\n",*addr);
@@ -115,7 +135,16 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   
   pthread_mutex_unlock(&malloc_lock);  
   */
-  
+  /*
+  start = *addr;
+  if(SCCIsMaster()){
+    freePtr = local+((48*numMailboxes) * 2);
+    memleft = ((SHM_MEMORY_SIZE/numMailboxes)-((48*numMailboxes)*2));
+  } else {
+    freePtr = local+MEMORY_OFFSET(SCCGetNodeRank());
+    memleft = (SHM_MEMORY_SIZE/numMailboxes);
+  }
+  */
   start = *addr;
   if(SCCIsMaster()){
     freePtr = local+((48*numMailboxes) * 2);
@@ -157,11 +186,29 @@ void *SCCMallocPtr(size_t size)
    freePtr += size+1;
    memleft -= size+1;
    //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left MB:%f\n",size,ptr,(double)(memleft/(1024*1024)));
+   //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left MB:%f\n",size,ptr,(double)(memleft/(1024*1024)));
 	 pthread_mutex_unlock(&malloc_lock);
    return ptr;  
 }
 
-void SCCFreePtr(void *p){}
+//   unsigned int alignedAddr = (SHM_ADDR) & (~(getpagesize()-1));
+
+
+void *SCCVMallocPtr(size_t size)
+{
+   void* ptr;
+ 	 pthread_mutex_lock(&malloc_lock);
+   assert(memleft > size+1);
+   //ptr = (uintptr_t)((uintptr_t)( freePtr + getpagesize() ) & (~(getpagesize()-1)));
+   ptr = (uintptr_t)( freePtr + getpagesize() ) & (~(getpagesize()-1));
+   memleft -= ( ( (char*)ptr - freePtr ) + size + 1 );
+   freePtr = ( ptr + size ) + 1;
+   //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left MB:%f\n",size,ptr,(double)(memleft/(1024*1024)));
+	 pthread_mutex_unlock(&malloc_lock);
+   return ptr;  
+}
+
+void SCCFreePtr(void *p){ p = NULL;}
 int DCMflush(){}
 
 #ifdef USE_OLD_MALLOC
