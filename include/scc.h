@@ -9,12 +9,6 @@
 #include "scc_config.h"
 #include "debugging.h"
 
-/* Utility functions*/
-//typedef int bool;
-//#define false 0
-//#define true  1
-
-
 #define PAGE_SIZE           (16*1024*1024)
 #define LINUX_PRIV_PAGES    (20)
 #define PAGES_PER_CORE      (41)
@@ -23,46 +17,23 @@
 #define MAX_PAGES           (59) //instead of 192, because first 41 can not be used to map into
 #define SHM_MEMORY_SIZE			0x3B000000 // 59 * 16 = 944: 944*1024*1024 = 3B00 0000
 #define SHM_ADDR            0x84000000 // start at 0x84 (132) to 0xbe (190): 59 pages
-
-/*
-#define MAX_PAGES           (152) //instead of 192, because first 41 can not be used to map into
-#define SHM_MEMORY_SIZE			0x97000000
-#define SHM_ADDR            0x41000000
-*/
-//#define LOCAL_SHMSIZE  			SHM_MEMORY_SIZE/num_worker
 #define MEMORY_OFFSET(id) 	(id *(SHM_MEMORY_SIZE/(num_worker+num_wrapper)))
 
 
 #define CORES               (NUM_ROWS * NUM_COLS * NUM_CORES)
 #define IRQ_BIT             (0x01 << GLCFG_XINTR_BIT)
 
-//#define FOOL_WRITE_COMBINE  (mpbs[node_id][0] = 1)
-#define FOOL_WRITE_COMBINE  (mpbs[0][0] = 1)
+#define FOOL_WRITE_COMBINE  ((*((volatile int*)firstMPB)) = 1)
 #define MPB_LINE_SIZE       (1<<5) // 32
-//#define SNETGLOBWAIT        (*(mpbs[0])) // on MPB line 0
-// workers will wait on this address to become number of workers
-//#define WAITWORKERS         (*(mpbs[0] + (MPB_LINE_SIZE * 1)))
-// master will write malloc address at this address so that workers can get it
-//#define MALLOCADDR          (mpbs[0] + (MPB_LINE_SIZE * 2))
-/*
-#define SNETGLOBWAIT        (*(mpbs[0] + 2)) // on MPB line 0
-#define WAITWORKERS         (*(mpbs[0] + 34))
-#define MALLOCADDR          (mpbs[0] + 66)
-#define MESSTOP             (*(mpbs[0] + 98))
-#define SOSIADDR            (mpbs[0] + 130)
-*/
 
 #define SNETGLOBWAITVAL      6
 #define WAITWORKERSVAL       9
-#define SNETGLOBWAIT        (*((volatile int*)(mpbs[0] + 2))) // on MPB line 0
-#define WAITWORKERS         (*((volatile int*)(mpbs[0] + 34)))
-#define MALLOCADDR          (mpbs[0] + 66)
-#define MESSTOP             (*((volatile int*)(mpbs[0] + 98)))
-#define SOSIADDR            (mpbs[0] + 130)
-#define OBSSET              (*((volatile int*)(mpbs[0] + 160)))
-
-
-#define LUT(loc, idx)       (*((volatile uint32_t*)(&luts[loc][idx])))
+#define SNETGLOBWAIT        (*((volatile int*)(firstMPB + 2))) // on MPB line 0
+#define WAITWORKERS         (*((volatile int*)(firstMPB + 34)))
+#define MALLOCADDR          (firstMPB + 66)
+#define MESSTOP             (*((volatile int*)(firstMPB + 98)))
+#define SOSIADDR            (firstMPB + 130)
+#define OBSSET              (*((volatile int*)(firstMPB + 160)))
 
 /* Power defines */
 #define RC_MAX_FREQUENCY_DIVIDER     16  // maximum divider value, so lowest F
@@ -80,11 +51,8 @@ extern uintptr_t  *allMbox;
 
 extern t_vcharp mbox_start_addr;
 
-extern t_vcharp mpbs[CORES];
+extern t_vcharp firstMPB;
 extern t_vcharp locks[CORES];
-extern t_vcharp newLock;
-extern volatile int *irq_pins[CORES];
-extern volatile uint64_t *luts[CORES];
 
 
 static inline int min(int x, int y) { return x < y ? x : y; }

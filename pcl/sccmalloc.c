@@ -59,7 +59,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   mem = open("/dev/rckncm", O_RDWR|O_SYNC);
   PRT_ADR("mem: %i\n", mem);
   if (mem < 0) {
-		fprintf(stderr, "Opening /dev/rckdyn011 failed!\n");
+		fprintf(stderr, "Opening /dev/rckncm failed!\n");
     exit(-1);
   }	
 
@@ -85,12 +85,12 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
    	
 		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
-    /*
+
     // Set memory as un-cached
     if (mprotect((void *) local, SHM_MEMORY_SIZE, SMC_PAGE_PCD | SMC_PAGE_SET) == -1) {
         fprintf(stderr, "Fail to set (%p, %zu) as un-cached!\n", local, SHM_MEMORY_SIZE);
         exit(1);
-    }*/
+    }
     
 		*addr=local;
   }else{
@@ -98,53 +98,14 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 		local=*addr;	
 		local = mmap((void*)local, SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
    	if (local == NULL) { fprintf(stderr, "Couldn't map memory!"); exit(-1); }
-   /*
+
     // Set memory as un-cached
     if (mprotect((void *) local, SHM_MEMORY_SIZE, SMC_PAGE_PCD | SMC_PAGE_SET) == -1) {
         fprintf(stderr, "Fail to set (%p, %zu) as un-cached!\n", local, SHM_MEMORY_SIZE);
         exit(1);
-    }*/
+    }
   }  
 
-  PRT_ADR("sccmalloc: addr: %p\n",*addr);
-  /*
-  //calculate the start-address in the SHM, depending on the max. number of participating WORKERS and the ID of the calling WORKER
-  if(SCCIsMaster()){
-    freeList = local+(48*numMailboxes);
-    freeList->hdr.size = ((SHM_MEMORY_SIZE/numMailboxes)-(48*numMailboxes))/ sizeof(block_t);
-  } else {
-    //get logical id and offset into memory to get local start
-    freeList = local+MEMORY_OFFSET(SCCGetNodeRank());  
-    freeList->hdr.size = (SHM_MEMORY_SIZE/numMailboxes)/ sizeof(block_t);
-  }
-  	
-	
-  PRT_ADR("SHM_MEMORY_SIZE: %zu, sizeof(block_t): %d\n",SHM_MEMORY_SIZE,sizeof(block_t));
-	PRT_ADR("\nsccmalloc: freeList %p\n",freeList);
-  
-  freeList->hdr.next = freeList;
-  PRT_ADR("sccmalloc: next: %p\n",freeList->hdr.next);
-  
-  //freeList->hdr.size = (SHM_MEMORY_SIZE/numMailboxes)/ sizeof(block_t);
-  PRT_ADR("sccmalloc: size: %zu\n\n",freeList->hdr.size);
-  
-  // this is used in free to see if address is given by normal malloc or sccmalloc
-  start = *addr; 
-  //PRT_ADR("start %p, freelist %p, size %zu\n",start,freeList,freeList->hdr.size);
-  fprintf(stderr,"start %p, freelist %p, size %zu\n",start,freeList,freeList->hdr.size);
-  
-  pthread_mutex_unlock(&malloc_lock);  
-  */
-  /*
-  start = *addr;
-  if(SCCIsMaster()){
-    freePtr = local+((48*numMailboxes) * 2);
-    memleft = ((SHM_MEMORY_SIZE/numMailboxes)-((48*numMailboxes)*2));
-  } else {
-    freePtr = local+MEMORY_OFFSET(SCCGetNodeRank());
-    memleft = (SHM_MEMORY_SIZE/numMailboxes);
-  }
-  */
   start = *addr;
   if(SCCIsMaster()){
     freePtr = local+((48*numMailboxes) * 2);
@@ -154,8 +115,8 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
     memleft = (SHM_MEMORY_SIZE/numMailboxes);
   }
   
-  fprintf(stderr,"start %p, freelist %p, size B:%zu, KB:%f, MB:%f\
-          \n",start,freePtr,memleft,(double)(memleft/1024),(double)(memleft/(1024*1024)));
+  fprintf(stderr,"start %p, End %p,freelist %p, size B:%zu, KB:%f, MB:%f\
+          \n",start,(start+SHM_MEMORY_SIZE),freePtr,memleft,(double)(memleft/1024),(double)(memleft/(1024*1024)));
 
   pthread_mutex_unlock(&malloc_lock); 
   
