@@ -60,8 +60,8 @@ static inline int min(int x, int y) { return x < y ? x : y; }
 /* Flush MPBT from L1. */
 static inline void flush() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
 
-//static inline void lock(int core) { while (!(*locks[core] & 0x01)); }
-//static inline void unlock(int core) { *locks[core] = 0; }
+static inline void lock(int core) { while (!(*locks[core] & 0x01)); }
+static inline void unlock(int core) { *locks[core] = 0; }
 
 void acquire_lock();
 void release_lock();
@@ -128,7 +128,7 @@ void startPowerMeasurement(int start);
 void powerMeasurement(FILE *fileHand);
 
 /* Support Functions */
-void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile);
+void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, char *masterFilePath);
 void SCCStop();
 int  SCCGetNodeID();
 int  SCCGetNodeRank();
@@ -153,11 +153,11 @@ void SCCFreePtr(void *p);
 
 int DCMflush();
 
-
+/*
 static inline void lock(int core) {
   printf("------------------------------------- Will try to get lock %p %f\n",locks[core],SCCGetTime());
   while(!(*locks[core] & 0x01)){
-      printf(". %f\t",SCCGetTime());
+      printf(". ");
       fflush(stdout);
       usleep(node_id);
   }
@@ -168,7 +168,7 @@ static inline void unlock(int core) {
  *locks[core] = 0; 
  printf("------------------------------------- Lock Released %p %f\n",locks[core],SCCGetTime());
  }
+*/
 
-void printAir();
 #endif /*SCC_H*/
 

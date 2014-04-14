@@ -85,12 +85,7 @@ static int co_set_context(co_ctx_t *ctx, void *func, char *stkbase, long stksiz)
 
 static void co_switch_context(co_ctx_t *octx, co_ctx_t *nctx)
 {
-	printf("SWAPING to %p from %p\n",nctx,octx);
-/*	printf("INSIDE CO_SWITCH_CONTEXT, octx:			%p\n",octx);
-	printf("INSIDE CO_SWITCH_CONTEXT, octx->cc:		%p\n",octx->cc);
-	printf("INSIDE CO_SWITCH_CONTEXT, nctx:			%p\n",nctx);
-	printf("INSIDE CO_SWITCH_CONTEXT, nctx->cc:		%p\n",nctx->cc);
-*/
+	ALL_DBG("pcl.c: SWAPING to %p from %p\n",nctx,octx);
 	cothread_ctx *tctx = co_get_thread_ctx();
 
 	if (swapcontext(&octx->cc, &nctx->cc) < 0) {
@@ -442,8 +437,8 @@ void co_call(coroutine_t coro)
 	coroutine *oldco = tctx->co_curr;
 	co->caller = tctx->co_curr;
 	tctx->co_curr = co;
-	printf("co = %p, old co = %p\n",co,oldco);
-	printf("SWITCH NOW to %p from %p\n",&co->ctx,&oldco->ctx);
+	ALL_DBG("pcl.c: co = %p, old co = %p\n",co,oldco);
+	ALL_DBG("pcl.c: SWITCH NOW to %p from %p\n",&co->ctx,&oldco->ctx);
 	co_switch_context(&oldco->ctx, &co->ctx);
 }
 
@@ -451,20 +446,15 @@ void OLDco_call(coroutine_t coro)
 {
 	DCMflush(); 
 	cothread_ctx *tctx = co_get_thread_ctx();
-	//printf("co_call %p\n",&(((coroutine *)coro)->ctx);
-	//printf("co_call just got ctx %p, coro %p\n",tctx,tctx->co_curr);
 	coroutine *co = (coroutine *) coro;
-	//printf("co_call co ctx %p\n",&co->ctx);
 	coroutine *oldco = tctx->co_curr;
-	//printf("co_call co %p, oldco %p\n",co,oldco);
-	printf("co_call oldco ctx %p\n",&oldco->ctx);
-	//printf("co_call tctx->coro %p, oldco %p\n",tctx->co_curr,oldco);
+	ALL_DBG("pcl.c: co_call oldco ctx %p\n",&oldco->ctx);
+
 	co->caller = tctx->co_curr;
 	tctx->co_curr = co;
-	//PRT_DBG("SWITCH CONTEXT NOW to coro: %p, co->ctx: %p\n",coro,co->ctx);
-	printf("SWITCH NOW to %p from %p\n",&co->ctx,&oldco->ctx);
+
+	ALL_DBG("pcl.c: SWITCH NOW to %p from %p\n",&co->ctx,&oldco->ctx);
 	co_switch_context(&oldco->ctx, &co->ctx);
-	//PRT_DBG("CONTEXT SWITCHED to coro: %p, co->ctx: %p\n",coro,co->ctx);
 	DCMflush();
 }
 

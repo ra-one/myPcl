@@ -197,7 +197,7 @@ void MPBalloc(t_vcharp *MPB, int x, int y, int core, unsigned char isOwnMPB) {
   unsigned int pageOffset = (isOwnMPB?(MPB_OWN+(MPBSIZE*core)):MPB_ADDR(x,y,core)) - alignedAddr;
   
   if ((x>=NUM_COLS) || (y>=NUM_ROWS) || (core>=NUM_CORES)) {
-    printf("MPBalloc: Invalid coordinates (x=%0d, y=%0d, core=%0d)\n", x,y,core);
+    fprintf(stderr,"MPBalloc: Invalid coordinates (x=%0d, y=%0d, core=%0d)\n", x,y,core);
     *MPB = NULL;
     return;
   }

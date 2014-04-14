@@ -27,6 +27,7 @@
 #include "pcl.h"
 #include "pcl_private.h"
 #include "scc.h"
+#include "debugging.h"
 
 
 static cothread_ctx *co_get_global_ctx(void)
@@ -166,9 +167,9 @@ cothread_ctx *co_get_thread_ctx(void)
 	 * the co_thread_init()/co_thread_cleanup() functions.
 	 */
 	if(tctx != NULL){
-		printf("get thrd cntx will return ctx %p\n",tctx);
+		ALL_DBG("pcl_private.c: get thrd cntx will return ctx %p\n",tctx);
 	} else {
-		printf("get thrd cntx will return glbl %p\n",co_get_global_ctx());
+		ALL_DBG("pcl_private.c: get thrd cntx will return glbl %p\n",co_get_global_ctx());
 	}
 
 	return tctx != NULL ? tctx: co_get_global_ctx();

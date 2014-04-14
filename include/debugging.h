@@ -6,4 +6,5 @@
 #else
 #define PRT_DBG	//
 #define PRT_DBG1	//
+#define ALL_DBG //
 #endif

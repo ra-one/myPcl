@@ -137,7 +137,7 @@ static void my_free_hook (void *ptr, const void *caller)
   mCount++;
  /* Restore all old hooks */
  __free_hook = old_free_hook;
- printf ("mcount %d WILL free pointer %p\n",mCount, ptr);
+ //printf ("mcount %d WILL free pointer %p\n",mCount, ptr);
  /* Call recursively */
   free(ptr);
  /* Restore our own hooks */
@@ -148,17 +148,16 @@ static void my_free_hook (void *ptr, const void *caller)
 // End of Malloc / Free hooks
 //////////////////////////////////////////////////////////////////////////////////////// 
 
-void remapLUT() {
+void remapLUT(int myCoreID) {
+  // coreID is Z coordinate
   int page_size, i,NCMDeviceFD;
 
   t_vcharp     MappedAddr;
   unsigned int result,alignedAddr, pageOffset, ConfigAddr;
-  unsigned int ConfigAddrLUT,myCoreID,coreID_mask=0x00000007;
+  unsigned int ConfigAddrLUT;
   
   page_size  = getpagesize(); // set page size
-  result = ReadConfigReg(CRB_OWN+MYTILEID); // read tile id 
-  myCoreID =  result & coreID_mask; // get core id
- 
+  
   if ((NCMDeviceFD=open("/dev/rckncm", O_RDWR|O_SYNC))<0) {
     perror("open"); exit(-1);
   }
@@ -168,11 +167,23 @@ void remapLUT() {
   } else { 
     ConfigAddrLUT = CRB_OWN+LUT0; 
   }
-      
+/*      
   unsigned int value = 45138;
   unsigned int lutSlot = 0x84,max = 0xbe;
   for(lutSlot; lutSlot<=max;lutSlot++){//for(i = 132; i<190;i++){
     if(lutSlot == 0xA1) value = 307528;//if(lutSlot == 161) value = 307528;
+*/  
+  int idx=0,page=0;
+  unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,20,30
+  unsigned int value = lutValArr[idx];
+  unsigned int lutSlot = 0x84,max = 0xbe;
+  for(lutSlot; lutSlot<=max;lutSlot++){//for(i = 132; i<190;i++){
+    if(page == 4) { // map four pages for each MC
+			lutValArr[idx] = value; // update array with new value
+			page = 0; // set page to 0 again
+			idx = (idx+1)%4; // update idx between 0 - 3
+			value = lutValArr[idx]; // get next value from array
+	  }
     
     ConfigAddr = ConfigAddrLUT + (lutSlot*0x08);
     alignedAddr = ConfigAddr & (~(page_size-1));
@@ -183,11 +194,12 @@ void remapLUT() {
       perror("mmap");exit(-1);
     }
   
-   printf("lutSlot %d(0x%x) oldEntry 0x%x ",lutSlot,lutSlot,(int*)(MappedAddr+pageOffset));
+   ALL_DBG("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
    *(int*)(MappedAddr+pageOffset) = value;
    value++;
+   page++;
+   ALL_DBG(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
    munmap((void*)MappedAddr, page_size);
-   printf(" after edit: 0x%x\n",(int*)(MappedAddr+pageOffset));
   }
 }
 
@@ -202,11 +214,11 @@ int* MallocConfigRegMy(unsigned int ConfigAddr){
   return result;
 }
 
-void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
+void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, char *masterFilePath){
   //variables for the MPB init
   int core,size, x, y, z, address, offset,i;
   unsigned char cpu;
-  
+  printf("%s\n%s\n\n",hostFile, masterFilePath);
   InitAPI(0);
   
   /* get all info and set local var*/
@@ -224,7 +236,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
   // master_id gets value in this function
   SCCFill_RC_COREID(num_worker, num_wrapper, hostFile);
   
-  remapLUT();
+  remapLUT(z);
 
   if (SCCIsMaster()){
     MPBalloc(&firstMPB, X_PID(0), Y_PID(0), Z_PID(0), 1);
@@ -232,24 +244,24 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
       *(volatile unsigned long long int*)(firstMPB+offset) = 0;
     }
     SCCMallocInit((void *)&addr,num_mailboxes);
-    printf("addr: %p, firstMPB %p\n",(void*)addr,firstMPB);
+    ALL_DBG("scc.c: addr %p, firstMPB %p\n",(void*)addr,firstMPB);
     memcpy((void*)MALLOCADDR, (const void*)&addr, sizeof(uintptr_t));
     WAITWORKERS = WAITWORKERSVAL;
     FOOL_WRITE_COMBINE;
     MPBunalloc(&firstMPB);
   } else {
     MPBalloc(&firstMPB, X_PID(0), Y_PID(0), Z_PID(0), 0);
-    printf("scc.c: going into wait workers, WAITWORKERS = %d\n",(*((volatile int*)(firstMPB + 34))));
+    ALL_DBG("scc.c: going into wait workers, WAITWORKERS = %d\n",(*((volatile int*)(firstMPB + 34))));
     while(WAITWORKERS != WAITWORKERSVAL);
     // worker waits untill it gets address to map shared memory from master
     memcpy((void*)&addr, (const void*)MALLOCADDR, sizeof(uintptr_t));
-    printf("addr: %p, firstMPB %p\n",(void*)addr,firstMPB);
+    ALL_DBG("scc.c: addr %p, firstMPB %p\n",(void*)addr,firstMPB);
     MPBunalloc(&firstMPB);
     SCCMallocInit((void *)&addr,num_mailboxes);
   } 
-   
-  masterFile = fopen("out/master.txt", "w");
-  if (masterFile == NULL)fprintf(stderr, "Can't open output file for master!\n");
+	
+  masterFile = fopen(masterFilePath, "w");
+  if (masterFile == NULL)fprintf(stderr, "Can't open output file %s for master!\n",masterFilePath);
   
   // Timer registers
   tlo = (int *) MallocConfigReg(FPGA_BASE+0x08224);
@@ -276,7 +288,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile){
    //MPB allocation
     if(cpu == 0) {
       MPBalloc(&firstMPB, x, y, z, cpu == node_id);
-      printf("scc.c: firstMPB = %p\n",firstMPB); 
+      ALL_DBG("scc.c: firstMPB = %p\n",firstMPB); 
     }
     //FIRST SET OF AIR
     atomic_inc_regs[cpu].counter = (int *) MallocConfigReg(air_baseE + (8*cpu));
@@ -375,7 +387,7 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
 	  getline(&line,&len,fd);
     int l = atoi(line);
     PRT_FILE("np %d, line %d\n",np,l);
-    //printf("SCC RC np %d, line %d\n",np,l);
+    //ALL_DBG("scc.c: SCC RC np %d, line %d\n",np,l);
     RC_COREID[np] = l;
     if(np == 0) master_id = RC_COREID[np]; // set master id
     // node_rank is virtual address

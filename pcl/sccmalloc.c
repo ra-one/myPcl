@@ -85,25 +85,26 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
    	
 		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
-
+/*
     // Set memory as un-cached
     if (mprotect((void *) local, SHM_MEMORY_SIZE, SMC_PAGE_PCD | SMC_PAGE_SET) == -1) {
         fprintf(stderr, "Fail to set (%p, %zu) as un-cached!\n", local, SHM_MEMORY_SIZE);
         exit(1);
     }
-    
+*/    
 		*addr=local;
   }else{
 		PRT_ADR("WORKER MMAP\n\n");
 		local=*addr;	
 		local = mmap((void*)local, SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
    	if (local == NULL) { fprintf(stderr, "Couldn't map memory!"); exit(-1); }
-
+/*
     // Set memory as un-cached
     if (mprotect((void *) local, SHM_MEMORY_SIZE, SMC_PAGE_PCD | SMC_PAGE_SET) == -1) {
         fprintf(stderr, "Fail to set (%p, %zu) as un-cached!\n", local, SHM_MEMORY_SIZE);
         exit(1);
     }
+*/
   }  
 
   start = *addr;
@@ -146,7 +147,6 @@ void *SCCMallocPtr(size_t size)
    ptr = freePtr;
    freePtr += size+1;
    memleft -= size+1;
-   //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left MB:%f\n",size,ptr,(double)(memleft/(1024*1024)));
    //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left MB:%f\n",size,ptr,(double)(memleft/(1024*1024)));
 	 pthread_mutex_unlock(&malloc_lock);
    return ptr;  
