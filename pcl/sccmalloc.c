@@ -11,12 +11,6 @@
 #include "scc.h"
 #include <pthread.h>
 
-#define SMC_PAGE_OFFSET	8
-/// PCD (set: no cache; clear: cachable)
-#define SMC_PAGE_PCD	(0x010 << SMC_PAGE_OFFSET)
-/// Judge whether need to change the cache behavior
-#define SMC_PAGE_SET	(1 << (SMC_PAGE_OFFSET - 1))
-
 #define PRT_ADR //
 #define PRT_MALLOC //
 #define PRT_MALLOCX //
@@ -63,11 +57,10 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
     exit(-1);
   }	
 
-  /*
-   * create a new mapping for the SHM
-   * if the addr ptr. is unset then the calling node is the MASTER and has to create the mapping and set the start-address
-   * if the addr ptr. is set then the calling node is a WORKER and just has to map the memory to a fixed start-address gotten from the MASTER
-   *
+  /* create a new mapping for the SHM  if the addr ptr is unset then the calling 
+   * node is the MASTER and has to create the mapping and set the start-address
+   * if the addr ptr is set then the calling node is a WORKER and just has to 
+   * map the memory to a fixed start-address gotten from the MASTER
    */
   unsigned int alignedAddr = (SHM_ADDR) & (~(getpagesize()-1));
   unsigned int pageOffset = (SHM_ADDR) - alignedAddr;
@@ -85,26 +78,13 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
    	
 		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
-/*
-    // Set memory as un-cached
-    if (mprotect((void *) local, SHM_MEMORY_SIZE, SMC_PAGE_PCD | SMC_PAGE_SET) == -1) {
-        fprintf(stderr, "Fail to set (%p, %zu) as un-cached!\n", local, SHM_MEMORY_SIZE);
-        exit(1);
-    }
-*/    
+    
 		*addr=local;
   }else{
 		PRT_ADR("WORKER MMAP\n\n");
 		local=*addr;	
 		local = mmap((void*)local, SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
    	if (local == NULL) { fprintf(stderr, "Couldn't map memory!"); exit(-1); }
-/*
-    // Set memory as un-cached
-    if (mprotect((void *) local, SHM_MEMORY_SIZE, SMC_PAGE_PCD | SMC_PAGE_SET) == -1) {
-        fprintf(stderr, "Fail to set (%p, %zu) as un-cached!\n", local, SHM_MEMORY_SIZE);
-        exit(1);
-    }
-*/
   }  
 
   start = *addr;
@@ -148,6 +128,7 @@ void *SCCMallocPtr(size_t size)
    freePtr += size+1;
    memleft -= size+1;
    //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left MB:%f\n",size,ptr,(double)(memleft/(1024*1024)));
+   fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left %fB,%fKB %fMB\n",size,ptr,(double)memleft,(double)(memleft/1024),(double)(memleft/(1024*1024)));
 	 pthread_mutex_unlock(&malloc_lock);
    return ptr;  
 }

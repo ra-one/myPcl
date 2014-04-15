@@ -176,8 +176,14 @@ void remapLUT(int myCoreID) {
   int idx=0,page=0;
   unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,20,30
   unsigned int value = lutValArr[idx];
-  unsigned int lutSlot = 0x84,max = 0xbe;
-  for(lutSlot; lutSlot<=max;lutSlot++){//for(i = 132; i<190;i++){
+
+#ifdef _MAX_MEM_2384__
+  unsigned int lutSlot = 0x2A,max = 0xBE; //max mem is 2384 M
+#else
+  unsigned int lutSlot = 0x84,max = 0xBE; // max mem is 944 M
+#endif 
+  
+  for(lutSlot; lutSlot<=max;lutSlot++){
     if(page == 4) { // map four pages for each MC
 			lutValArr[idx] = value; // update array with new value
 			page = 0; // set page to 0 again
