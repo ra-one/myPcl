@@ -11,41 +11,41 @@
 #include "scc.h"
 #include <pthread.h>
 
+#define lMemB  infoLocal->memleft
+#define lMemKB (double)(infoLocal->memleft/1024)
+#define lMemMB (double)(infoLocal->memleft/(1024*1024))
+#define MemB   info->memleft
+#define MemKB  (double)(info->memleft/1024)
+#define MemMB  (double)(info->memleft/(1024*1024))
+
 #define PRT_ADR //
-#define PRT_MALLOC //
-#define PRT_MALLOCX //
-#define PRT_MALLOCX1 //
-//#define PRT_MALLOCX1 fprintf
 
-//#define USE_MALLOC_HOOK
-
-//mutex variable used to lock SCCMallocPtr, because of the possibility of different threads running on the same core
 pthread_mutex_t malloc_lock;
 
-typedef union block {
-  struct {
-    union block *next;
-    size_t size;
-  } hdr;
-  uint32_t align;   // Forces proper allignment
-} block_t;
 
 static void *local;
 static int mem;
-static block_t *freeList;
 
 uintptr_t start;
 
 static size_t memleft;
 static char *freePtr;
 
+typedef struct memInfo{
+  char *freePtr;
+  size_t memleft;
+}memInfo;
+
+pthread_mutex_t malloc_lock;
+
+struct memInfo *info,*infoLocal,tempInfo;
+
 /*
  * SCCMallocInit creates a new mapping for the SHM and sets the "addr" pointer to the beginning address of this SHM
  */
 
 void SCCMallocInit(uintptr_t *addr,int numMailboxes)
-{
-  //init mutex variable for the SCCMallocPtr function
+{  
   pthread_mutex_init(&malloc_lock, NULL);
   
   pthread_mutex_lock(&malloc_lock);
@@ -55,7 +55,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   if (mem < 0) {
 		fprintf(stderr, "Opening /dev/rckncm failed!\n");
     exit(-1);
-  }	
+  }
 
   /* create a new mapping for the SHM  if the addr ptr is unset then the calling 
    * node is the MASTER and has to create the mapping and set the start-address
@@ -88,19 +88,57 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   }  
 
   start = *addr;
+
+  info = malloc(sizeof(memInfo*));
+  infoLocal = malloc(sizeof(memInfo*));
+  
   if(SCCIsMaster()){
-    freePtr = local+((48*numMailboxes) * 2);
-    memleft = ((SHM_MEMORY_SIZE/numMailboxes)-((48*numMailboxes)*2));
+    tempInfo.freePtr = local+10+((48*numMailboxes) * 2);
+    tempInfo.memleft = (SHM_MEMORY_SIZE-(10+(48*numMailboxes)*2));
+    memcpy((void*)(local+((48*numMailboxes) * 2)),(const void*)&tempInfo,sizeof(memInfo)); 
+    info->freePtr=NULL;
+    info->memleft = 0;
   } else {
-    freePtr = local+MEMORY_OFFSET(SCCGetNodeRank());
-    memleft = (SHM_MEMORY_SIZE/numMailboxes);
+    info->freePtr=NULL;
+    info->memleft = 0;
   }
   
-  fprintf(stderr,"start %p, End %p,freelist %p, size B:%zu, KB:%f, MB:%f\
-          \n",start,(start+SHM_MEMORY_SIZE),freePtr,memleft,(double)(memleft/1024),(double)(memleft/(1024*1024)));
+  infoLocal = (local+((48*numMailboxes) * 2));
+  fprintf(stderr,"start %p, End %p,freelist %p, size B:%zu, KB:%f, MB:%f\n",start,(start+SHM_MEMORY_SIZE),infoLocal->freePtr,lMemB,lMemKB,lMemMB); 
+  pthread_mutex_unlock(&malloc_lock);
+}
 
-  pthread_mutex_unlock(&malloc_lock); 
-  
+/*
+ * SCCMallocPtr is used to allocate memory in the SHM
+ */
+void *SCCMallocPtrLocal(size_t size)
+{
+   void* ptr;
+   lock(29);
+   assert(infoLocal->memleft > size+1);
+   ptr = infoLocal->freePtr;
+   infoLocal->freePtr += size+1;
+   infoLocal->memleft -= size+1;
+   //fprintf(stderr,"sccMallocLocal size: %zu, returned: %p, mem left %zuB,%fKB %fMB\n",size,ptr,lMemB,lMemKB,lMemMB);
+   unlock(29);
+   return ptr;  
+}
+void *SCCMallocPtr(size_t size)
+{
+   void* ptr;
+
+   pthread_mutex_lock(&malloc_lock);
+   if (info->memleft < size+1){
+    info->freePtr = SCCMallocPtrLocal(32*1024*1024); // 32 MB chunk at a time 
+    info->memleft = ((32*1024*1024)-10); // -10 to leave small space at the end
+   }
+   assert(info->memleft > size+1);
+   ptr = info->freePtr;
+   info->freePtr += size+1;
+   info->memleft -= size+1;
+   //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left %zuB,%fKB %fMB\n",size,ptr,MemB,MemKB,MemMB);
+   pthread_mutex_unlock(&malloc_lock);
+   return ptr;  
 }
 
 void *SCCGetLocal(void){
@@ -110,169 +148,14 @@ void *SCCGetLocal(void){
 void SCCMallocStop(void)
 {
   //fprintf(stderr, "****************************\nsccmalloc stop at %f, size %zu\n\n\n",SCCGetTime(),freeList->hdr.size);
-  fprintf(stderr, "****************************\nsccmalloc stop at %f, size B:%zu, KB:%f, MB:%f\
-          \n\n\n",SCCGetTime(),memleft,(double)(memleft/1024),(double)(memleft/(1024*1024)));
+  fprintf(stderr, "****************************\nsccmalloc stop at %f\n\
+  Info  size B:%zu, KB:%f, MB:%f\n\
+  Local size B:%zu, KB:%f, MB:%f\n\n\n",SCCGetTime(),MemB,MemKB,MemMB,lMemB,lMemKB,lMemMB);
   munmap(local, SHM_MEMORY_SIZE);
   close(mem);
 }
 
-/*
- * SCCMallocPtr is used to allocate memory in the SHM
- */
-void *SCCMallocPtr(size_t size)
-{
-   void* ptr;
- 	 pthread_mutex_lock(&malloc_lock);
-   assert(memleft > size+1);
-   ptr = freePtr;
-   freePtr += size+1;
-   memleft -= size+1;
-   //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left MB:%f\n",size,ptr,(double)(memleft/(1024*1024)));
-   fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left %fB,%fKB %fMB\n",size,ptr,(double)memleft,(double)(memleft/1024),(double)(memleft/(1024*1024)));
-	 pthread_mutex_unlock(&malloc_lock);
-   return ptr;  
-}
-
-//   unsigned int alignedAddr = (SHM_ADDR) & (~(getpagesize()-1));
-
-
-void *SCCVMallocPtr(size_t size)
-{
-   void* ptr;
- 	 pthread_mutex_lock(&malloc_lock);
-   assert(memleft > size+1);
-   //ptr = (uintptr_t)((uintptr_t)( freePtr + getpagesize() ) & (~(getpagesize()-1)));
-   ptr = (uintptr_t)( freePtr + getpagesize() ) & (~(getpagesize()-1));
-   memleft -= ( ( (char*)ptr - freePtr ) + size + 1 );
-   freePtr = ( ptr + size ) + 1;
-   //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left MB:%f\n",size,ptr,(double)(memleft/(1024*1024)));
-	 pthread_mutex_unlock(&malloc_lock);
-   return ptr;  
-}
+void *SCCVMallocPtr(size_t size){}
 
 void SCCFreePtr(void *p){ p = NULL;}
 int DCMflush(){}
-
-#ifdef USE_OLD_MALLOC
-void *SCCMallocPtr(size_t size)
-{
-  size_t nunits;
-  block_t *curr, *prev, *new;
-	pthread_mutex_lock(&malloc_lock);
-
-  if (freeList == NULL){
-    fprintf(stderr, "Couldn't allocate memory freelist is NULL!\n");
-    pthread_mutex_unlock(&malloc_lock);
-    exit(-1);
-    return NULL;
-  }
-  
-  prev = freeList;
-  curr = prev->hdr.next;
-  nunits = (size + sizeof(block_t) - 1) / sizeof(block_t) + 1;
-  PRT_MALLOCX("SCCMallocPtr is called for size: %zu, nunits %zu\n",size,nunits);
-  do {
-		/* the following debugging printout is very useful to check if there is a Problem 
-		 * with the memory allocation, usually forced by a not allowed write to the SHM 
-		 * either by a normal malloc or a manual write to an address in the SHM
-		 */
-     //size and next will always be same as there is only one element in free list
-     PRT_MALLOCX("prev->hdr.size %zu,prev->hdr.next %p, curr->hdr.size %zu, curr->hdr.next %p\n",prev->hdr.size,prev->hdr.next,curr->hdr.size,curr->hdr.next);
-			if (curr->hdr.size >= nunits){
-				if (curr->hdr.size == nunits){
-					if (prev == curr){
-						PRT_MALLOCX("SET prev TO NULL in malloc\n");
-						prev = NULL;
-					}else{
-						prev->hdr.next = curr->hdr.next;
-					}
-				} else if (curr->hdr.size > nunits){
-					new = curr + nunits;
-					*new = *curr;
-					new->hdr.size -= nunits;
-					curr->hdr.size = nunits;
-					if (prev == curr) prev = new;
-						prev->hdr.next = new;
-				}
-				freeList = prev;
-				pthread_mutex_unlock(&malloc_lock);
-        PRT_MALLOC(stderr,"SCCMalloc: returns %p at time: %f\n",(void*) (curr + 1),SCCGetTime());
-        PRT_MALLOCX1(stderr,"SCCMalloc: returns %p current size: %zu\n",(void*) (curr + 1),freeList->hdr.size);
-        return (void*) (curr + 1);
-			}
-		} while (curr != freeList && (prev = curr, curr = curr->hdr.next));
-
-		pthread_mutex_unlock(&malloc_lock);
-
-		fprintf(stderr, "Couldn't allocate memory: not enough available!\n");
-    exit(-1);
-		return NULL;
-}
-
-/*
- * SCCFreePtr is used to free memory in the SHM
- */
-void SCCFreePtr(void *p)
-{
-  // this deals with NULL or some normal malloc trying to be freed by this function
-  // specially from snet-rts lexer.c
-  if(p == NULL || start > p) return;
-  /*
-  if(start > p){
-    PRT_MALLOC(stderr, "SCCFree going to call free of %p at %f\n",p,SCCGetTime());
-    free(p);    
-    return;
-  }
-  */
-  
-  PRT_MALLOC(stderr, "SCCFree pointer %p at %f\n",p,SCCGetTime());
-  pthread_mutex_lock(&malloc_lock);
-  
-  block_t *block = (block_t*) p - 1,
-          *curr = freeList;
-
-  if (freeList == NULL) {
-    freeList = block;
-    freeList->hdr.next = freeList;
-    pthread_mutex_unlock(&malloc_lock);
-    return;
-  }
-
-  while (!(block > curr && block < curr->hdr.next)) {
-    if (curr >= curr->hdr.next && (block > curr || block < curr->hdr.next)) break;
-    curr = curr->hdr.next;
-  }
-
-
-  if (block + block->hdr.size == curr->hdr.next) {
-    block->hdr.size += curr->hdr.next->hdr.size;
-    if (curr == curr->hdr.next) block->hdr.next = block;
-    else block->hdr.next = curr->hdr.next->hdr.next;
-  } else {
-    block->hdr.next = curr->hdr.next;
-  }
-
-  if (curr + curr->hdr.size == block) {
-    curr->hdr.size += block->hdr.size;
-    curr->hdr.next = block->hdr.next;
-  } else {
-    curr->hdr.next = block;
-  }
-
-  freeList = curr;
-  
-  pthread_mutex_unlock(&malloc_lock);
-}
-
-
-/*
- * used to flush the whole L2-cache
- */
-int DCMflush() {
-   //flushes the whole L2 cache
-   //write(mem,0,65536);
-   //   write(mem,0,0);
-   return 1;
-}
-#endif //USE_OLD_MALLOC
-

@@ -224,7 +224,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, cha
   //variables for the MPB init
   int core,size, x, y, z, address, offset,i;
   unsigned char cpu;
-  printf("%s\n%s\n\n",hostFile, masterFilePath);
+  
   InitAPI(0);
   
   /* get all info and set local var*/
@@ -801,42 +801,4 @@ void atomic_readR(AIR *reg, int *value)
 void atomic_writeR(AIR *reg, int value)
 {
   (*reg->init) = value;
-}
-
-//--------------------------------------------------------------------------------------
-// FUNCTION: acquire_lock and release_lock for atomic.h in LPEL
-//--------------------------------------------------------------------------------------
-// from Baremichael scc.c
-//--------------------------------------------------------------------------------------
-void acquire_lock()
-{
-	int tile, core;
-	void *crb_base;
-	volatile unsigned char *lock;
-
-	tile = 10 / 2;
-	core = 10 % 2;
-
-	crb_base = (void *)CRB_ADDR(tile % 6, tile / 6); 
-	lock = (char *)((ulong)crb_base + (core ? LOCK1 : LOCK0));
-
-	/* The LOCK bit is clear-on-read i.e. we have the lock when reading a '1' 
-	*/
-	while (!(*lock & 0x1)) ; // might want to sleep or something? 
-}
-
-void release_lock()
-{
-	int tile, core;
-	void *crb_base;
-	volatile unsigned char *lock;
-
-	tile = 10 / 2;
-	core = 10 % 2;
-
-	crb_base = (void *)CRB_ADDR(tile % 6, tile / 6); 
-	lock = (char *)((ulong)crb_base + (core ? LOCK1 : LOCK0));
-
-	/* The LOCK bit is set by writing to the register */
-	*lock = 0;
 }

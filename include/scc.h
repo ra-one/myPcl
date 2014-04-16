@@ -71,9 +71,6 @@ static inline int min(int x, int y) { return x < y ? x : y; }
 /* Flush MPBT from L1. */
 static inline void flush() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
 
-static inline void lock(int core) { while (!(*locks[core] & 0x01)); }
-static inline void unlock(int core) { *locks[core] = 0; }
-
 void acquire_lock();
 void release_lock();
 
@@ -164,7 +161,9 @@ void SCCFreePtr(void *p);
 
 int DCMflush();
 
-/*
+//#define _dbg_
+
+#ifdef _dbg_
 static inline void lock(int core) {
   printf("------------------------------------- Will try to get lock %p %f\n",locks[core],SCCGetTime());
   while(!(*locks[core] & 0x01)){
@@ -178,8 +177,11 @@ static inline void lock(int core) {
 static inline void unlock(int core) {
  *locks[core] = 0; 
  printf("------------------------------------- Lock Released %p %f\n",locks[core],SCCGetTime());
- }
-*/
+}
+#else
+static inline void lock(int core) { while (!(*locks[core] & 0x01)); }
+static inline void unlock(int core) { *locks[core] = 0; }
+#endif // _nodbg_
 
 #endif /*SCC_H*/
 
