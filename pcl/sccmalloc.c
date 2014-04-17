@@ -69,7 +69,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   
 	if (*addr==0x0){
 		PRT_ADR("MASTER MMAP\n\n");
-      void *mmap(void *addr, size_t length, int prot, int flags,int fd, off_t offset);
+    //void *mmap(void *addr, size_t length, int prot, int flags,int fd, off_t offset);
 		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, alignedAddr);
 		
 		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
