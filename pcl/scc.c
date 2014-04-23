@@ -344,7 +344,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, cha
 void SCCStop(){
   unsigned char cpu;
   int i,offset;
-  double stopTime; 
+  double stopTime;
   
   for (cpu = 0; cpu < 48; cpu++){
     FreeConfigReg((int*) locks[cpu]);
@@ -364,6 +364,15 @@ void SCCStop(){
   
   stopTime = SCCGetTime();
   
+  char *fname;
+  fname = malloc(sizeof(char)*15);
+  snprintf( fname, 15, "rck%02d.log",node_id);
+  FILE *fd;
+  fd = fopen(fname, "w");
+  
+  fprintf(fd, "%f#%f#%f",startTime,stopTime,stopTime-startTime);
+  fclose(fd);
+  
   fprintf(stderr, "************************************************************\n");
   fprintf(stderr, "\tStart Time: %f\n\tStop Time: %f\n\tTotal Runtime: %f\n",startTime,stopTime,stopTime-startTime);
   fprintf(stderr, "************************************************************\n");
@@ -376,6 +385,7 @@ void SCCStop(){
   for(i=0;i<6;i++){
     FreeConfigReg((int*)VCCADDRV[i]);
   }
+  
 }
 
 void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
@@ -383,7 +393,7 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
   int np,cid;
   char * line = NULL;
   size_t len = 0;
- 
+  
   fd = fopen (hostFile,"r");
   
   // fill with invalid value
@@ -708,13 +718,36 @@ static inline unsigned long long gtsc(void)
 
 //--------------------------------------------------------------------------------------
 // FUNCTION: generates time based on 125MHz system clock of the FPGA
+// Returns elapsed time in seconds
 //--------------------------------------------------------------------------------------
 double SCCGetTime()
 { 
+  /* second = cycles / freq in Hz SO second = gtsc() / 125000000 */
   // this is to generate time based on 125MHz system clock of the FPGA
   return ( ((double)gtsc())/(0.125*1.e9));
   // this is to generate time for 533 MHz clock
   //return ( ((double)gtsc())/(0.533*1.e9));
+}
+unsigned long long SCCGetTimeMS() /* msec (milliseconds) */
+{ return ((gtsc()*1000)/(0.125*1.e9)); }
+
+unsigned long long SCCGetTimeUS() /* usec (microseconds) */
+{ return ((gtsc()*1000000)/(0.125*1.e9)); }
+
+unsigned long long SCCGetTimeNS() /* nsec (nanoseconds) */
+{ return ((gtsc()*1000000000)/(0.125*1.e9)); }
+
+void SCCGetTimeAll(timespecSCC *t){
+  unsigned long long tval = gtsc();
+  unsigned long long nsec,sec;
+  
+  sec =  (tval/125000000);
+  nsec = (((tval*1000)/125) - (sec * 1.e9));
+  
+  t->tv_sec =  sec;
+  t->tv_msec = (tval/125000);
+  t->tv_usec = (tval/125);
+  t->tv_nsec = nsec;
 }
 
 //--------------------------------------------------------------------------------------
@@ -802,3 +835,18 @@ void atomic_writeR(AIR *reg, int value)
 {
   (*reg->init) = value;
 }
+
+//--------------------------------------------------------------------------------------
+// Just for info
+/*        nano    00 00 00 00 0
+ *        micro   00 00 00
+ *        mili    00 0
+ *        struct timeval {
+ *          long tv_sec;    // seconds 
+ *          long tv_usec;   // microseconds
+ *        };
+ *        struct timespec {
+ *            time_t  tv_sec    // seconds
+ *            long    tv_nsec;  // nanoseconds
+ *        };
+*/

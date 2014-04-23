@@ -135,6 +135,20 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain);
 void startPowerMeasurement(int start);
 void powerMeasurement(FILE *fileHand);
 
+typedef struct{
+  unsigned long    tv_sec;    // seconds 
+  unsigned long    tv_msec;   // milliseconds
+  unsigned long    tv_usec;   // microseconds
+  unsigned long    tv_nsec;   // nanoseconds  
+}timespecSCC;
+
+void SCCGetTimeAll(timespecSCC *t);
+double SCCGetTime();               /* sec  (seconds) */
+unsigned long long SCCGetTimeMS(); /* msec (milliseconds) */
+unsigned long long SCCGetTimeUS(); /* usec (microseconds) */
+unsigned long long SCCGetTimeNS(); /* nsec (nanoseconds) */
+
+
 /* Support Functions */
 void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, char *masterFilePath);
 void SCCStop();
@@ -143,7 +157,7 @@ int  SCCGetNodeRank();
 int  SCCIsMaster();
 int  SCCGetNumWrappers();
 int  SCCGetNumWrappers();
-double SCCGetTime();
+
 void atomic_incR(AIR *reg, int *value);
 void atomic_decR(AIR *reg, int value);
 void atomic_readR(AIR *reg, int *value);
