@@ -11,25 +11,23 @@
 #include "scc.h"
 #include <pthread.h>
 
-#define lMemB  infoLocal->memleft
-#define lMemKB (double)(infoLocal->memleft/1024)
-#define lMemMB (double)(infoLocal->memleft/(1024*1024))
+#define gMemB  infoGlobal->memleft
+#define gMemKB ((double)infoGlobal->memleft/1024)
+#define gMemMB ((double)infoGlobal->memleft/(1024*1024))
 #define MemB   info->memleft
-#define MemKB  (double)(info->memleft/1024)
-#define MemMB  (double)(info->memleft/(1024*1024))
+#define MemKB  ((double)info->memleft/1024)
+#define MemMB  ((double)info->memleft/(1024*1024))
 
 #define PRT_ADR //
 
 pthread_mutex_t malloc_lock;
-
 
 static void *local;
 static int mem;
 
 uintptr_t start;
 
-static size_t memleft;
-static char *freePtr;
+extern FILE *logFile;
 
 typedef struct memInfo{
   char *freePtr;
@@ -38,7 +36,7 @@ typedef struct memInfo{
 
 pthread_mutex_t malloc_lock;
 
-struct memInfo *info,*infoLocal,tempInfo;
+struct memInfo *info,*infoGlobal,tempInfo;
 
 /*
  * SCCMallocInit creates a new mapping for the SHM and sets the "addr" pointer to the beginning address of this SHM
@@ -90,7 +88,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   start = *addr;
 
   info = malloc(sizeof(memInfo*));
-  infoLocal = malloc(sizeof(memInfo*));
+  infoGlobal = malloc(sizeof(memInfo*));
   
   if(SCCIsMaster()){
     tempInfo.freePtr = local+10+((48*numMailboxes) * 2);
@@ -103,23 +101,25 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
     info->memleft = 0;
   }
   
-  infoLocal = (local+((48*numMailboxes) * 2));
-  fprintf(stderr,"start %p, End %p,freelist %p, size B:%zu, KB:%f, MB:%f\n",start,(start+SHM_MEMORY_SIZE),infoLocal->freePtr,lMemB,lMemKB,lMemMB); 
+  infoGlobal = (local+((48*numMailboxes) * 2));
+  printf("start %p, End %p,freelist %p, size B:%zu, KB:%f, MB:%f\n",start,(start+SHM_MEMORY_SIZE),infoGlobal->freePtr,gMemB,gMemKB,gMemMB); 
+  
   pthread_mutex_unlock(&malloc_lock);
 }
 
 /*
  * SCCMallocPtr is used to allocate memory in the SHM
  */
-void *SCCMallocPtrLocal(size_t size)
+void *SCCMallocPtrGlobal(size_t size)
 {
    void* ptr;
    lock(29);
-   assert(infoLocal->memleft > size+1);
-   ptr = infoLocal->freePtr;
-   infoLocal->freePtr += size+1;
-   infoLocal->memleft -= size+1;
-   //fprintf(stderr,"sccMallocLocal size: %zu, returned: %p, mem left %zuB,%fKB %fMB\n",size,ptr,lMemB,lMemKB,lMemMB);
+   //printf("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f\n",size,gMemB,gMemKB,gMemMB);
+   assert(infoGlobal->memleft >= size);
+   ptr = infoGlobal->freePtr;
+   infoGlobal->freePtr += size;
+   infoGlobal->memleft -= size;
+   //printf("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f, returned %p\n",size,gMemB,gMemKB,gMemMB,ptr);
    unlock(29);
    return ptr;  
 }
@@ -128,17 +128,28 @@ void *SCCMallocPtr(size_t size)
    void* ptr;
 
    pthread_mutex_lock(&malloc_lock);
-   if (info->memleft < size+1){
-    info->freePtr = SCCMallocPtrLocal(32*1024*1024); // 32 MB chunk at a time 
-    info->memleft = ((32*1024*1024)-10); // -10 to leave small space at the end
+   //if(size > 8000) printf("sccMalloc size: %zu, mem left B:%zu, KB:%f, MB:%f\n",size,MemB,MemKB,MemMB);
+   
+   if (info->memleft < size){
+    info->freePtr = SCCMallocPtrGlobal(64*1024*1024); // 64 MB chunk at a time 
+    info->memleft = (64*1024*1024); // no space at the end
    }
-   assert(info->memleft > size+1);
+   assert(info->memleft >= size);
    ptr = info->freePtr;
-   info->freePtr += size+1;
-   info->memleft -= size+1;
-   //fprintf(stderr,"sccMalloc size: %zu, returned: %p, mem left %zuB,%fKB %fMB\n",size,ptr,MemB,MemKB,MemMB);
+   info->freePtr = info->freePtr+size;
+   info->memleft = info->memleft-size;
+   //if(size > 8000) printf("sccMalloc size: %zu, mem left B:%zu, KB:%f, MB:%f, returned %p\n",size,MemB,MemKB,MemMB,ptr);
    pthread_mutex_unlock(&malloc_lock);
    return ptr;  
+}
+
+void *SCCFirstMalloc(void){
+  pthread_mutex_lock(&malloc_lock);
+  
+  info->freePtr = SCCMallocPtrGlobal(16*1024*1024); // 16 MB chunk at first time 
+  info->memleft = (16*1024*1024); // no space at the end
+  
+  pthread_mutex_unlock(&malloc_lock);
 }
 
 void *SCCGetLocal(void){
@@ -147,10 +158,12 @@ void *SCCGetLocal(void){
 
 void SCCMallocStop(void)
 {
-  //fprintf(stderr, "****************************\nsccmalloc stop at %f, size %zu\n\n\n",SCCGetTime(),freeList->hdr.size);
-  fprintf(stderr, "****************************\nsccmalloc stop at %f\n\
-  Info  size B:%zu, KB:%f, MB:%f\n\
-  Local size B:%zu, KB:%f, MB:%f\n\n\n",SCCGetTime(),MemB,MemKB,MemMB,lMemB,lMemKB,lMemMB);
+  printf("****************************\nsccmalloc stop at %f\n\
+  Info   size B:%zu, KB:%f, MB:%f\n\
+  Global size B:%zu, KB:%f, MB:%f\n\n\n",SCCGetTime(),MemB,MemKB,MemMB,gMemB,gMemKB,gMemMB);
+  
+  fprintf(logFile, "%zu#%f#%f\n%zu#%f#%f\n",MemB,MemKB,MemMB,gMemB,gMemKB,gMemMB);
+  
   munmap(local, SHM_MEMORY_SIZE);
   close(mem);
 }

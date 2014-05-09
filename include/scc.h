@@ -59,6 +59,7 @@ extern int num_worker;
 extern int num_wrapper;
 extern int num_mailboxes;
 extern uintptr_t  *allMbox;
+extern FILE *logFile;
 
 extern t_vcharp mbox_start_addr;
 
@@ -167,6 +168,7 @@ void atomic_writeR(AIR *reg, int value);
 
 void SCCMallocInit(uintptr_t *addr,int numMailboxes);
 void SCCMallocStop(void);
+void *SCCFirstMalloc(void);
 void *SCCGetlocal(void);
 void *SCCGetLocalMemStart(void);
 void *SCCMallocPtr(size_t size);

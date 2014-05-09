@@ -13,10 +13,11 @@
 #define PRT_ADR //
 #define PRT_MBX //
 #define PRT_FILE //
-#define USE_MALLOC_HOOK
+//#define USE_MALLOC_HOOK
 //#undef USE_MALLOC_HOOK
 
 FILE *masterFile;
+FILE *logFile;
 
 //used to write SHM start address into MPB
 uintptr_t  addr=0x0;
@@ -306,7 +307,8 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, cha
     }
   }
 
-
+  SCCFirstMalloc();
+  
   if(SCCIsMaster()){ // only master executes this code
     RPC_virtual_address = (t_vintp) MallocConfigReg(RPC_BASE);
     //fprintf(stderr,"RPCBASE %p vaddr %p\n",RPC_BASE,RPC_virtual_address);
@@ -346,6 +348,11 @@ void SCCStop(){
   int i,offset;
   double stopTime;
   
+  char *fname;
+  fname = malloc(sizeof(char)*64);
+  snprintf( fname, 64, "/shared/nil/Out/rck%02d.log",node_id);
+  logFile = fopen(fname, "w");
+  
   for (cpu = 0; cpu < 48; cpu++){
     FreeConfigReg((int*) locks[cpu]);
     if(cpu == 0) MPBunalloc( &firstMPB);
@@ -354,24 +361,18 @@ void SCCStop(){
     FreeConfigReg((int*) atomic_inc_regs[cpu].counter);
     FreeConfigReg((int*) atomic_inc_regs[cpu].init);
   }
-  SCCMallocStop();
   if(SCCIsMaster()){
     FreeConfigReg((int*) RPC_virtual_address);
     for (i=0; i<CORES/2; i++) {
       FreeConfigReg((int*) fChange_vAddr[i]);
     }
   }
-  
   stopTime = SCCGetTime();
+  fprintf(logFile, "%f#%f#%f\n",startTime,stopTime,stopTime-startTime);
   
-  char *fname;
-  fname = malloc(sizeof(char)*15);
-  snprintf( fname, 15, "rck%02d.log",node_id);
-  FILE *fd;
-  fd = fopen(fname, "w");
-  
-  fprintf(fd, "%f#%f#%f",startTime,stopTime,stopTime-startTime);
-  fclose(fd);
+  SCCMallocStop();
+    
+  fclose(logFile);
   
   fprintf(stderr, "************************************************************\n");
   fprintf(stderr, "\tStart Time: %f\n\tStop Time: %f\n\tTotal Runtime: %f\n",startTime,stopTime,stopTime-startTime);
