@@ -405,10 +405,9 @@ coroutine_t co_create(void (*func)(void *), void *data, void *stack, int size)
 	co->func = func;
 	co->data = data;
 	if (co_set_context(&co->ctx, co_runner, stack, size - CO_STK_COROSIZE) < 0) {
-	
-		if (alloc)
-			//free(co);
+		if (alloc){
 			SCCFreePtr(co);
+    }
 		return NULL;
 	}
 	PRT_DBG("INSIDE CO_CREATE		co->ctx: %p\n",co->ctx);

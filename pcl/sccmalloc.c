@@ -119,14 +119,15 @@ void *SCCMallocPtrGlobal(size_t size)
    ptr = infoGlobal->freePtr;
    infoGlobal->freePtr += size;
    infoGlobal->memleft -= size;
-   //printf("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f, returned %p\n",size,gMemB,gMemKB,gMemMB,ptr);
+   //printf("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f, returned %p\n" ,size, gMemB, gMemKB, gMemMB, ptr);
    unlock(29);
    return ptr;  
 }
+
 void *SCCMallocPtr(size_t size)
 {
    void* ptr;
-
+   
    pthread_mutex_lock(&malloc_lock);
    //if(size > 8000) printf("sccMalloc size: %zu, mem left B:%zu, KB:%f, MB:%f\n",size,MemB,MemKB,MemMB);
    
@@ -139,15 +140,23 @@ void *SCCMallocPtr(size_t size)
    info->freePtr = info->freePtr+size;
    info->memleft = info->memleft-size;
    //if(size > 8000) printf("sccMalloc size: %zu, mem left B:%zu, KB:%f, MB:%f, returned %p\n",size,MemB,MemKB,MemMB,ptr);
+   
    pthread_mutex_unlock(&malloc_lock);
    return ptr;  
 }
 
 void *SCCFirstMalloc(void){
   pthread_mutex_lock(&malloc_lock);
-  
-  info->freePtr = SCCMallocPtrGlobal(16*1024*1024); // 16 MB chunk at first time 
-  info->memleft = (16*1024*1024); // no space at the end
+
+  if(SCCIsMaster()){
+    // 16 MB chunk at first time 
+    info->freePtr = SCCMallocPtrGlobal((16*1024*1024)-(10+(48*SCCGetNumCores())*2)); 
+    info->memleft = ((16*1024*1024)-(10+(48*SCCGetNumCores())*2)); // no space at the end
+  } else {
+    // 16 MB chunk at first time 
+    info->freePtr = SCCMallocPtrGlobal(16*1024*1024); 
+    info->memleft = (16*1024*1024); // no space at the end
+  }
   
   pthread_mutex_unlock(&malloc_lock);
 }

@@ -168,22 +168,13 @@ void remapLUT(int myCoreID) {
   } else { 
     ConfigAddrLUT = CRB_OWN+LUT0; 
   }
-/*      
-  unsigned int value = 45138;
-  unsigned int lutSlot = 0x84,max = 0xbe;
-  for(lutSlot; lutSlot<=max;lutSlot++){//for(i = 132; i<190;i++){
-    if(lutSlot == 0xA1) value = 307528;//if(lutSlot == 161) value = 307528;
-*/  
+
   int idx=0,page=0;
-  unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,20,30
+  unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,29,30
   unsigned int value = lutValArr[idx];
 
-#ifdef _MAX_MEM_2384__
-  unsigned int lutSlot = 0x2A,max = 0xBE; //max mem is 2384 M
-#else
-  unsigned int lutSlot = 0x84,max = 0xBE; // max mem is 944 M
-#endif 
-  
+  unsigned int lutSlot = START_PAGE, max = END_PAGE; // max mem is 944 M
+
   for(lutSlot; lutSlot<=max;lutSlot++){
     if(page == 4) { // map four pages for each MC
 			lutValArr[idx] = value; // update array with new value
@@ -200,13 +191,12 @@ void remapLUT(int myCoreID) {
     if (MappedAddr == MAP_FAILED) {
       perror("mmap");exit(-1);
     }
-  
-   ALL_DBG("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
-   *(int*)(MappedAddr+pageOffset) = value;
-   value++;
-   page++;
-   ALL_DBG(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
-   munmap((void*)MappedAddr, page_size);
+    ALL_DBG("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    *(int*)(MappedAddr+pageOffset) = value;
+    value++;
+    page++;
+    ALL_DBG(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    munmap((void*)MappedAddr, page_size);
   }
 }
 

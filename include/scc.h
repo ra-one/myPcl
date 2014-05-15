@@ -13,21 +13,30 @@
 #define LINUX_PRIV_PAGES    (20)
 #define PAGES_PER_CORE      (41)
 
+#define MAX_PAGES       151 
+#define START_PAGE      0x29 // 41
+#define END_PAGE        0xBF // 191
+#define SHM_MEMORY_SIZE 0x97000000 // 151 * 16 = 2416: 2416 * 1024 * 1024 = 0x97000000
+#define SHM_ADDR        0x29000000 // start at 0x29 (41) to 0xBE (191): 149 pages
+
+/*
 #define _MAX_MEM_2384__
 
 #ifdef _MAX_MEM_2384__
 #define MAX_PAGES       149 
-#define START_PAGES     0X2A
-#define END_PAGE        0xBE
+#define START_PAGE      0X2A // 42
+#define END_PAGE        0xBE // 190
 #define SHM_MEMORY_SIZE 0x95000000 // 149 * 16 = 2384: 2384 * 1024 * 1024 = 0x95000000
-#define SHM_ADDR        0x42000000 // start at 0x2A (41) to 0xBE (191): 149 pages
+#define SHM_ADDR        0x2A000000 // start at 0x2A (42) to 0xBE (190): 149 pages
 #else
 #define MAX_PAGES       59 //instead of 192, because first 41 can not be used to map into
-#define START_PAGES     0X84
-#define END_PAGE        0xBE
+#define START_PAGE      0X84 // 132
+#define END_PAGE        0xBE // 190
 #define SHM_MEMORY_SIZE 0x3B000000 // 59 * 16 = 944: 944*1024*1024 = 3B00 0000
 #define SHM_ADDR        0x84000000 // start at 0x84 (132) to 0xbe (190): 59 pages
 #endif //_MAX_MEM_2384__
+*/
+
 
 
 #define MEMORY_OFFSET(id) 	(id *(SHM_MEMORY_SIZE/(num_worker+num_wrapper)))
@@ -45,6 +54,7 @@
 #define MESSTOP             (*((volatile int*)(firstMPB + 98)))
 #define SOSIADDR            (firstMPB + 130)
 #define OBSSET              (*((volatile int*)(firstMPB + 160)))
+
 
 /* Power defines */
 #define RC_MAX_FREQUENCY_DIVIDER     16  // maximum divider value, so lowest F
