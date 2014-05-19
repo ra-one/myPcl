@@ -191,11 +191,11 @@ void remapLUT(int myCoreID) {
     if (MappedAddr == MAP_FAILED) {
       perror("mmap");exit(-1);
     }
-    ALL_DBG("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    //printf("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
     *(int*)(MappedAddr+pageOffset) = value;
     value++;
     page++;
-    ALL_DBG(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    //printf(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
     munmap((void*)MappedAddr, page_size);
   }
 }

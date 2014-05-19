@@ -20,6 +20,14 @@
 #define SHM_ADDR        0x29000000 // start at 0x29 (41) to 0xBE (191): 149 pages
 
 /*
+#define MAX_PAGES       160 
+#define START_PAGE      0x20 // 32
+#define END_PAGE        0xBF // 191
+#define SHM_MEMORY_SIZE 0xA000000 // 160 * 16 = 2560: 2416 * 1024 * 1024 = 0xA0000000
+#define SHM_ADDR        0x20000000 // start at 0x29 (41) to 0xBE (191): 149 pages
+*/
+
+/*
 #define _MAX_MEM_2384__
 
 #ifdef _MAX_MEM_2384__
@@ -75,7 +83,6 @@ extern t_vcharp mbox_start_addr;
 
 extern t_vcharp firstMPB;
 extern t_vcharp locks[CORES];
-
 
 static inline int min(int x, int y) { return x < y ? x : y; }
 
@@ -179,12 +186,8 @@ void atomic_writeR(AIR *reg, int value);
 void SCCMallocInit(uintptr_t *addr,int numMailboxes);
 void SCCMallocStop(void);
 void *SCCFirstMalloc(void);
-void *SCCGetlocal(void);
-void *SCCGetLocalMemStart(void);
 void *SCCMallocPtr(size_t size);
-void *SCCVMallocPtr(size_t size);
 void SCCFreePtr(void *p);
-
 int DCMflush();
 
 //#define _dbg_
