@@ -104,7 +104,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   }
   
   infoGlobal = (local+((48*numMailboxes) * 2));
-  printf("start %p, End %p,freelist %p, size B:%zu, KB:%f, MB:%f\n",start,(start+SHM_MEMORY_SIZE),infoGlobal->freePtr,gMemB,gMemKB,gMemMB); 
+  NO_SCRIPT_DBG("start %p, End %p,freelist %p, size B:%zu, KB:%f, MB:%f\n",start,(start+SHM_MEMORY_SIZE),infoGlobal->freePtr,gMemB,gMemKB,gMemMB); 
   
   pthread_mutex_unlock(&malloc_lock);
 }
@@ -121,7 +121,7 @@ void *SCCMallocPtrGlobal(size_t size)
    ptr = infoGlobal->freePtr;
    infoGlobal->freePtr += size;
    infoGlobal->memleft -= size;
-   printf("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f, returned %p, \n", size, gMemB, gMemKB, gMemMB, ptr);
+   NO_SCRIPT_DBG("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f, returned %p, \n", size, gMemB, gMemKB, gMemMB, ptr);
    unlock(29);
    return ptr;  
 }
@@ -165,7 +165,7 @@ void *SCCFirstMalloc(void){
 
 void SCCMallocStop(void)
 {
-  printf("****************************\nsccmalloc stop at %f\n\
+  NO_SCRIPT_DBG("****************************\nsccmalloc stop at %f\n\
   Info   size B:%zu, KB:%f, MB:%f\n\
   Global size B:%zu, KB:%f, MB:%f\n\n\n",SCCGetTime(),MemB,MemKB,MemMB,gMemB,gMemKB,gMemMB);
   

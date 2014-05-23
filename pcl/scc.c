@@ -327,7 +327,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, cha
   }
   
   startTime = SCCGetTime();
-  fprintf(stderr, "****************************\nSCC INIT at %f\n",startTime);
+  NO_SCRIPT_DBG( "****************************\nSCC INIT at %f\n",startTime);
 }
 
 //--------------------------------------------------------------------------------------
@@ -364,9 +364,9 @@ void SCCStop(){
     
   fclose(logFile);
   
-  fprintf(stderr, "************************************************************\n");
-  fprintf(stderr, "\tStart Time: %f\n\tStop Time: %f\n\tTotal Runtime: %f\n",startTime,stopTime,stopTime-startTime);
-  fprintf(stderr, "************************************************************\n");
+  NO_SCRIPT_DBG("************************************************************\n");
+  NO_SCRIPT_DBG("\tStart Time: %f\n\tStop Time: %f\n\tTotal Runtime: %f\n",startTime,stopTime,stopTime-startTime);
+  NO_SCRIPT_DBG("************************************************************\n");
   
   FreeConfigReg((int*) tlo);
   FreeConfigReg((int*) thi);
