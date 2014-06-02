@@ -87,7 +87,7 @@ extern t_vcharp locks[CORES];
 static inline int min(int x, int y) { return x < y ? x : y; }
 
 /* Flush MPBT from L1. */
-static inline void flush() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
+static inline void flushL1() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
 
 void acquire_lock();
 void release_lock();
