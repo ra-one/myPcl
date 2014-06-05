@@ -62,6 +62,7 @@
 #define MESSTOP             (*((volatile int*)(firstMPB + 98)))
 #define SOSIADDR            (firstMPB + 130)
 #define OBSSET              (*((volatile int*)(firstMPB + 160)))
+#define TIMEADDR            (firstMPB + 190)
 
 
 /* Power defines */
