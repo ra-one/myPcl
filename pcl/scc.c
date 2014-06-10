@@ -15,9 +15,9 @@
 #define PRT_FILE //
 //#define USE_MALLOC_HOOK
 //#undef USE_MALLOC_HOOK
-
 FILE *masterFile;
 FILE *logFile;
+long long int requestServiced = 0;
 
 //used to write SHM start address into MPB
 uintptr_t  addr=0x0;
@@ -361,7 +361,8 @@ void SCCStop(){
   fprintf(logFile, "%f#%f#%f\n",startTime,stopTime,stopTime-startTime);
   
   SCCMallocStop();
-    
+  
+  fprintf(logFile, "%lld\n",requestServiced);
   fclose(logFile);
   
   NO_SCRIPT_DBG("************************************************************\n");

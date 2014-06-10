@@ -79,6 +79,8 @@ extern int num_wrapper;
 extern int num_mailboxes;
 extern uintptr_t  *allMbox;
 extern FILE *logFile;
+extern FILE *masterFile;
+extern long long int requestServiced;
 
 extern t_vcharp mbox_start_addr;
 
