@@ -31,6 +31,7 @@
 
 // Variables
 int NCMDeviceFD; // File descriptor for non-cachable memory (e.g. config regs).
+int DCMDeviceFD; // File descriptor for cachable memory.
 int MPBDeviceFD; // File descriptor for message passing buffers.
 
 // InitAPI opens the RCKMEM device drivers. This routine needs to be invoked
@@ -44,13 +45,19 @@ void InitAPI(int printMessages) {
   // Open driver device "/dev/rckncm" for memory mapped register access
   // or access to other non cachable memory locations...
   if ((NCMDeviceFD=open("/dev/rckncm", O_RDWR|O_SYNC))<0) {
-    perror("open");
+    perror("Error in opening NCM device\n");
     exit(-1);
   }
-
+  
+  // Open driver device "/dev/dckdcm" for cachable memory locations...
+  if ((DCMDeviceFD=open("/dev/rckdcm", O_RDWR|O_SYNC))<0) {
+    perror("Error in opening DCM device\n");
+    exit(-1);
+  }
+  
   // Open driver device "/dev/rckmpb" for message passing buffer access...
   if ((MPBDeviceFD=open("/dev/rckmpb", O_RDWR))<0) {
-      perror("open");
+      perror("Error in opening MPB device\n");
       exit(-1);
   }
   // Success message

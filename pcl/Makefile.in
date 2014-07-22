@@ -75,7 +75,7 @@ am__installdirs = "$(DESTDIR)$(libdir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
 libpcl_la_LIBADD =
 am_libpcl_la_OBJECTS = pcl.lo pcl_version.lo pcl_private.lo \
-	scc_config.lo RCCE_memcpy.lo scc.lo sccmalloc.lo
+	scc_config.lo scc.lo sccmalloc.lo
 libpcl_la_OBJECTS = $(am_libpcl_la_OBJECTS)
 libpcl_la_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
@@ -214,7 +214,7 @@ top_srcdir = @top_srcdir@
 INCLUDES = -I$(srcdir)/../include
 lib_LTLIBRARIES = libpcl.la
 libpcl_la_SOURCES = pcl.c pcl_version.c pcl_private.c \
-                    scc_config.c RCCE_memcpy.c scc.c sccmalloc.c 
+                    scc_config.c scc.c sccmalloc.c 
 
 libpcl_la_LDFLAGS = -version-info 1:11:0 -lpthread
 all: all-am
@@ -291,7 +291,6 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/RCCE_memcpy.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pcl.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pcl_private.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pcl_version.Plo@am__quote@

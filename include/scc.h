@@ -9,60 +9,26 @@
 #include "scc_config.h"
 #include "debugging.h"
 
-#define PAGE_SIZE           (16*1024*1024)
-#define LINUX_PRIV_PAGES    (20)
-#define PAGES_PER_CORE      (41)
-
 #define MAX_PAGES       151 
 #define START_PAGE      0x29 // 41
 #define END_PAGE        0xBF // 191
 #define SHM_MEMORY_SIZE 0x97000000 // 151 * 16 = 2416: 2416 * 1024 * 1024 = 0x97000000
 #define SHM_ADDR        0x29000000 // start at 0x29 (41) to 0xBE (191): 149 pages
 
-/*
-#define MAX_PAGES       160 
-#define START_PAGE      0x20 // 32
-#define END_PAGE        0xBF // 191
-#define SHM_MEMORY_SIZE 0xA000000 // 160 * 16 = 2560: 2416 * 1024 * 1024 = 0xA0000000
-#define SHM_ADDR        0x20000000 // start at 0x29 (41) to 0xBE (191): 149 pages
-*/
-
-/*
-#define _MAX_MEM_2384__
-
-#ifdef _MAX_MEM_2384__
-#define MAX_PAGES       149 
-#define START_PAGE      0X2A // 42
-#define END_PAGE        0xBE // 190
-#define SHM_MEMORY_SIZE 0x95000000 // 149 * 16 = 2384: 2384 * 1024 * 1024 = 0x95000000
-#define SHM_ADDR        0x2A000000 // start at 0x2A (42) to 0xBE (190): 149 pages
-#else
-#define MAX_PAGES       59 //instead of 192, because first 41 can not be used to map into
-#define START_PAGE      0X84 // 132
-#define END_PAGE        0xBE // 190
-#define SHM_MEMORY_SIZE 0x3B000000 // 59 * 16 = 944: 944*1024*1024 = 3B00 0000
-#define SHM_ADDR        0x84000000 // start at 0x84 (132) to 0xbe (190): 59 pages
-#endif //_MAX_MEM_2384__
-*/
-
-
-
-#define MEMORY_OFFSET(id) 	(id *(SHM_MEMORY_SIZE/(num_worker+num_wrapper)))
+#define MBXSZ               20 //mailbox size d=16, x=0x10
+#define INFOSZ              10 //size of memInfo d=8 x=0x8
 
 #define CORES               (NUM_ROWS * NUM_COLS * NUM_CORES)
-
 #define FOOL_WRITE_COMBINE  ((*((volatile int*)firstMPB)) = 1)
-#define MPB_LINE_SIZE       (1<<5) // 32
 
 #define SNETGLOBWAITVAL      6
 #define WAITWORKERSVAL       9
 #define SNETGLOBWAIT        (*((volatile int*)(firstMPB + 2))) // on MPB line 0
 #define WAITWORKERS         (*((volatile int*)(firstMPB + 34)))
 #define MALLOCADDR          (firstMPB + 66)
-#define MESSTOP             (*((volatile int*)(firstMPB + 98)))
-#define SOSIADDR            (firstMPB + 130)
-#define OBSSET              (*((volatile int*)(firstMPB + 160)))
-#define TIMEADDR            (firstMPB + 190)
+#define SOSIADDR            (firstMPB + 98)
+#define OBSSET              (*((volatile int*)(firstMPB + 130)))
+#define TIMEADDR            (firstMPB + 160)
 
 
 /* Power defines */
@@ -72,25 +38,13 @@
 #define RC_GLOBAL_CLOCK_MHZ          1600
 #define RC_VOLTAGE_DOMAINS           6
 
-extern int node_id;
-extern int master_id;
-extern int num_worker;
-extern int num_wrapper;
-extern int num_mailboxes;
 extern uintptr_t  *allMbox;
-extern FILE *logFile;
-extern FILE *masterFile;
-extern long long int requestServiced;
-
-extern t_vcharp mbox_start_addr;
 
 extern t_vcharp firstMPB;
 extern t_vcharp locks[CORES];
 
-static inline int min(int x, int y) { return x < y ? x : y; }
-
 /* Flush MPBT from L1. */
-static inline void flushL1() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
+static inline void INVMPBTL1() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
 
 void acquire_lock();
 void release_lock();
@@ -158,25 +112,18 @@ void powerMeasurement(FILE *fileHand);
 
 typedef struct{
   unsigned long    tv_sec;    // seconds 
-  unsigned long    tv_msec;   // milliseconds
-  unsigned long    tv_usec;   // microseconds
   unsigned long    tv_nsec;   // nanoseconds  
 }timespecSCC;
 
 void SCCGetTimeAll(timespecSCC *t);
 double SCCGetTime();               /* sec  (seconds) */
-unsigned long long SCCGetTimeMS(); /* msec (milliseconds) */
-unsigned long long SCCGetTimeUS(); /* usec (microseconds) */
-unsigned long long SCCGetTimeNS(); /* nsec (nanoseconds) */
-
 
 /* Support Functions */
-void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, char *masterFilePath);
+void SCCInit();
 void SCCStop();
 int  SCCGetNodeID();
 int  SCCGetNodeRank();
 int  SCCIsMaster();
-int  SCCGetNumWrappers();
 int  SCCGetNumWrappers();
 
 void atomic_incR(AIR *reg, int *value);
@@ -186,7 +133,7 @@ void atomic_writeR(AIR *reg, int value);
 
 /* malloc functions */
 
-void SCCMallocInit(uintptr_t *addr,int numMailboxes);
+void SCCMallocInit(uintptr_t *addr);
 void SCCMallocStop(void);
 void *SCCFirstMalloc(void);
 void *SCCMallocPtr(size_t size);

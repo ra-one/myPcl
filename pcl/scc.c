@@ -13,8 +13,7 @@
 #define PRT_ADR //
 #define PRT_MBX //
 #define PRT_FILE //
-//#define USE_MALLOC_HOOK
-//#undef USE_MALLOC_HOOK
+
 FILE *masterFile;
 FILE *logFile;
 long long int requestServiced = 0;
@@ -105,134 +104,34 @@ int node_id = -1;  // physical location
 int node_rank = -1;  // logical location
 int num_worker = -1; // number of workers including master
 int num_wrapper = -1; // number of wrappers
-int num_mailboxes = -1; // number of mailboxes (worker + wrappers)
+int num_cores = -1; // number of mailboxes (worker + wrappers)
 int master_id = -1;
+char *hostFile;
 int activeDomains[6];
 
-void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile);
+void SCCFill_RC_COREID();
+void remapLUT(int myCoreID);
+void setSCCVars();
 
-
-//////////////////////////////////////////////////////////////////////////////////////// 
-// Start of Malloc / Free hooks
-//////////////////////////////////////////////////////////////////////////////////////// 
-#ifdef USE_MALLOC_HOOK
-void *mallocStart;
-static int mCount = 0;
-/* Prototypes for our hooks.  */
-static void my_init_hook (void);
-static void my_free_hook (void*, const void *);
-
-typeof(__free_hook) old_free_hook;
-
-/* Override initializing hook from the C library. */
-void (*__malloc_initialize_hook) (void) = my_init_hook;
-
-static void my_init_hook (void)
-{
- old_free_hook = __free_hook;
- __free_hook = my_free_hook;
-}
-
-static void my_free_hook (void *ptr, const void *caller)
-{
-  mCount++;
- /* Restore all old hooks */
- __free_hook = old_free_hook;
- //printf ("mcount %d WILL free pointer %p\n",mCount, ptr);
- /* Call recursively */
-  free(ptr);
- /* Restore our own hooks */
- __free_hook = my_free_hook;
-}
-#endif // USE_MALLOC_HOOK
-//////////////////////////////////////////////////////////////////////////////////////// 
-// End of Malloc / Free hooks
-//////////////////////////////////////////////////////////////////////////////////////// 
-
-void remapLUT(int myCoreID) {
-  // coreID is Z coordinate
-  int page_size, i,NCMDeviceFD;
-
-  t_vcharp     MappedAddr;
-  unsigned int result,alignedAddr, pageOffset, ConfigAddr;
-  unsigned int ConfigAddrLUT;
-  
-  page_size  = getpagesize(); // set page size
-  
-  if ((NCMDeviceFD=open("/dev/rckncm", O_RDWR|O_SYNC))<0) {
-    perror("open"); exit(-1);
-  }
-  
-  if(myCoreID==1){ 
-    ConfigAddrLUT = CRB_OWN+LUT1; 
-  } else { 
-    ConfigAddrLUT = CRB_OWN+LUT0; 
-  }
-
-  int idx=0,page=0;
-  unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,29,30
-  unsigned int value = lutValArr[idx];
-
-  unsigned int lutSlot = START_PAGE, max = END_PAGE; // max mem is 944 M
-
-  for(lutSlot; lutSlot<=max;lutSlot++){
-    if(page == 4) { // map four pages for each MC
-			lutValArr[idx] = value; // update array with new value
-			page = 0; // set page to 0 again
-			idx = (idx+1)%4; // update idx between 0 - 3
-			value = lutValArr[idx]; // get next value from array
-	  }
-    
-    ConfigAddr = ConfigAddrLUT + (lutSlot*0x08);
-    alignedAddr = ConfigAddr & (~(page_size-1));
-    pageOffset  = ConfigAddr - alignedAddr;
-    
-    MappedAddr = (t_vcharp) mmap(NULL, page_size, PROT_WRITE|PROT_READ, MAP_SHARED, NCMDeviceFD, alignedAddr);
-    if (MappedAddr == MAP_FAILED) {
-      perror("mmap");exit(-1);
-    }
-    //printf("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
-    *(int*)(MappedAddr+pageOffset) = value;
-    value++;
-    page++;
-    //printf(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
-    munmap((void*)MappedAddr, page_size);
-  }
-}
-
-int* MallocConfigRegMy(unsigned int ConfigAddr){
-  
-  int *result = (int *) MallocConfigReg(ConfigAddr);
-  
-  if((size_t)0 <= result-addr && result-addr < (size_t)0x3B000000){
-    printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Address falls in middle %p\n",result);
-  }
-  
-  return result;
-}
-
-void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, char *masterFilePath){
+void SCCInit(){
   //variables for the MPB init
   int core,size, x, y, z, address, offset,i;
   unsigned char cpu;
   
   InitAPI(0);
-  
-  /* get all info and set local var*/
-  num_worker = numWorkers;
-  num_wrapper = numWrapper;
-  num_mailboxes = num_worker + num_wrapper;
-  DVFS = enableDVFS;
-  
+ 
   z = ReadConfigReg(CRB_OWN+MYTILEID);
   x = (z >> 3) & 0x0f; // bits 06:03
   y = (z >> 7) & 0x0f; // bits 10:07
   z = z & 7; // bits 02:00
   node_id = PID(x, y, z);
  
+  /* Read input.txt in /shared and get all info and set local vars */
+  setSCCVars();
   // master_id gets value in this function
-  SCCFill_RC_COREID(num_worker, num_wrapper, hostFile);
+  SCCFill_RC_COREID();
   
+  /* Rmap LUT entries for shared memory */
   remapLUT(z);
 
   if (SCCIsMaster()){
@@ -240,7 +139,7 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, cha
     for (offset=0; offset < 0x2000; offset+=8){
       *(volatile unsigned long long int*)(firstMPB+offset) = 0;
     }
-    SCCMallocInit((void *)&addr,num_mailboxes);
+    SCCMallocInit((void *)&addr);
     ALL_DBG("scc.c: addr %p, firstMPB %p\n",(void*)addr,firstMPB);
     memcpy((void*)MALLOCADDR, (const void*)&addr, sizeof(uintptr_t));
     WAITWORKERS = WAITWORKERSVAL;
@@ -254,12 +153,9 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, cha
     memcpy((void*)&addr, (const void*)MALLOCADDR, sizeof(uintptr_t));
     ALL_DBG("scc.c: addr %p, firstMPB %p\n",(void*)addr,firstMPB);
     MPBunalloc(&firstMPB);
-    SCCMallocInit((void *)&addr,num_mailboxes);
+    SCCMallocInit((void *)&addr);
   } 
 	
-  masterFile = fopen(masterFilePath, "w");
-  if (masterFile == NULL)fprintf(stderr, "Can't open output file %s for master!\n",masterFilePath);
-  
   // Timer registers
   tlo = (int *) MallocConfigReg(FPGA_BASE+0x08224);
   thi = (int *) MallocConfigReg(FPGA_BASE+0x8228);
@@ -318,11 +214,11 @@ void SCCInit(int numWorkers, int numWrapper, int enableDVFS, char *hostFile, cha
   }
   
   //assign mailbox address into array
-  allMbox = SCCMallocPtr (sizeof(uintptr_t)*num_mailboxes);  
+  allMbox = SCCMallocPtr (sizeof(uintptr_t)*num_cores);  
   uintptr_t temp = addr;
-  for (i=0; i < num_mailboxes;i++){
+  for (i=0; i < num_cores;i++){
     allMbox[i] = (void*)temp;
-    temp = (void*)temp + 48;
+    temp = (void*)temp + MBXSZ;
     PRT_MBX("scc.c: allMbox[%d] %p\n",i,allMbox[i]);
   }
   
@@ -364,6 +260,7 @@ void SCCStop(){
   
   fprintf(logFile, "%lld\n",requestServiced);
   fclose(logFile);
+  fclose(masterFile);
   
   NO_SCRIPT_DBG("************************************************************\n");
   NO_SCRIPT_DBG("\tStart Time: %f\n\tStop Time: %f\n\tTotal Runtime: %f\n",startTime,stopTime,stopTime-startTime);
@@ -380,7 +277,7 @@ void SCCStop(){
   
 }
 
-void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
+void SCCFill_RC_COREID(){
   FILE *fd;
   int np,cid;
   char * line = NULL;
@@ -391,7 +288,7 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
   // fill with invalid value
   for(np=0;np<CORES;np++) RC_COREID[np] = -1;
   
-	for(np=0;np<(numWorkers+numWrapper);np++){
+	for(np=0;np<num_cores;np++){
 	  getline(&line,&len,fd);
     int l = atoi(line);
     PRT_FILE("np %d, line %d\n",np,l);
@@ -407,7 +304,7 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
   fclose(fd);
   
   for(np=0;np<RC_VOLTAGE_DOMAINS;np++) activeDomains[np] = -1;
-  for(np=0;np<(numWorkers+numWrapper);np++){
+  for(np=0;np<num_cores;np++){
     cid = RC_COREID[np];
     if((cid >= 0 && cid <= 3) || (cid >= 12 && cid <= 15)) activeDomains[0] = 1;
     if((cid >= 4 && cid <= 7) || (cid >= 16 && cid <= 19)) activeDomains[1] = 1;
@@ -417,6 +314,79 @@ void SCCFill_RC_COREID(int numWorkers, int numWrapper, char *hostFile){
     if((cid >= 32 && cid <= 35) || (cid >= 44 && cid <= 47)) activeDomains[5] = 1;
   }
 }
+
+void setSCCVars(){
+  FILE *fd;
+  char *key = NULL;
+  char *value;
+  size_t len = 0;
+   
+  fd = fopen ("/shared/nil/input.txt","r");
+
+	getline(&key, &len, fd); strtok_r(key, "=", &value); num_worker=atoi(value);
+	getline(&key, &len, fd); strtok_r(key, "=", &value); num_wrapper=atoi(value);
+	getline(&key, &len, fd); strtok_r(key, "=", &value); DVFS=atoi(value);
+  getline(&key, &len, fd); strtok_r(key, "=", &hostFile); hostFile[strcspn ( hostFile, "\n" )] = '\0';
+
+  num_cores = num_worker + num_wrapper;
+  
+  masterFile = fopen("/shared/nil/Out/master.txt", "w");
+  if (masterFile == NULL)fprintf(stderr, "Can't open output file /shared/nil/Out/master.txt for master!\n");
+  
+  fclose(fd);
+}
+
+void remapLUT(int myCoreID) {
+  // coreID is Z coordinate
+  int page_size, i,NCMDeviceFD;
+
+  t_vcharp     MappedAddr;
+  unsigned int result,alignedAddr, pageOffset, ConfigAddr;
+  unsigned int ConfigAddrLUT;
+  
+  page_size  = getpagesize(); // set page size
+  
+  if ((NCMDeviceFD=open("/dev/rckncm", O_RDWR|O_SYNC))<0) {
+    perror("open"); exit(-1);
+  }
+  
+  if(myCoreID==1){ 
+    ConfigAddrLUT = CRB_OWN+LUT1; 
+  } else { 
+    ConfigAddrLUT = CRB_OWN+LUT0; 
+  }
+
+  int idx=0,page=0;
+  unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,29,30
+  unsigned int value = lutValArr[idx];
+
+  unsigned int lutSlot = START_PAGE, max = END_PAGE; // max mem is 944 M
+
+  for(lutSlot; lutSlot<=max;lutSlot++){
+    if(page == 4) { // map four pages for each MC
+			lutValArr[idx] = value; // update array with new value
+			page = 0; // set page to 0 again
+			idx = (idx+1)%4; // update idx between 0 - 3
+			value = lutValArr[idx]; // get next value from array
+	  }
+    
+    ConfigAddr = ConfigAddrLUT + (lutSlot*0x08);
+    alignedAddr = ConfigAddr & (~(page_size-1));
+    pageOffset  = ConfigAddr - alignedAddr;
+    
+    MappedAddr = (t_vcharp) mmap(NULL, page_size, PROT_WRITE|PROT_READ, MAP_SHARED, NCMDeviceFD, alignedAddr);
+    if (MappedAddr == MAP_FAILED) {
+      perror("mmap");exit(-1);
+    }
+    //printf("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    *(int*)(MappedAddr+pageOffset) = value;
+    value++;
+    page++;
+    //printf(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    munmap((void*)MappedAddr, page_size);
+  }
+}
+
 //////////////////////////////////////////////////////////////////////////////////////// 
 // Start of Power and freq functions // virtual domain is passed in
 //////////////////////////////////////////////////////////////////////////////////////// 
@@ -720,14 +690,6 @@ double SCCGetTime()
   // this is to generate time for 533 MHz clock
   //return ( ((double)gtsc())/(0.533*1.e9));
 }
-unsigned long long SCCGetTimeMS() /* msec (milliseconds) */
-{ return ((gtsc()*1000)/(0.125*1.e9)); }
-
-unsigned long long SCCGetTimeUS() /* usec (microseconds) */
-{ return ((gtsc()*1000000)/(0.125*1.e9)); }
-
-unsigned long long SCCGetTimeNS() /* nsec (nanoseconds) */
-{ return ((gtsc()*1000000000)/(0.125*1.e9)); }
 
 void SCCGetTimeAll(timespecSCC *t){
   unsigned long long tval = gtsc();
@@ -737,8 +699,6 @@ void SCCGetTimeAll(timespecSCC *t){
   nsec = (((tval*1000)/125) - (sec * 1.e9));
   
   t->tv_sec =  sec;
-  t->tv_msec = (tval/125000);
-  t->tv_usec = (tval/125);
   t->tv_nsec = nsec;
 }
 
@@ -775,7 +735,7 @@ int SCCGetNumWrappers(void){
 // Returns number of participating cores
 //--------------------------------------------------------------------------------------
 int SCCGetNumCores(void){
-	return num_mailboxes;
+	return num_cores;
 }
 
 //--------------------------------------------------------------------------------------
@@ -841,4 +801,19 @@ void atomic_writeR(AIR *reg, int value)
  *            time_t  tv_sec    // seconds
  *            long    tv_nsec;  // nanoseconds
  *        };
+*/
+
+/*
+void SCCGetTimeAll(timespecSCC *t){
+  unsigned long long tval = gtsc();
+  unsigned long long nsec,sec;
+  
+  sec =  (tval/125000000);
+  nsec = (((tval*1000)/125) - (sec * 1.e9));
+  
+  t->tv_sec =  sec;             // seconds 
+  t->tv_msec = (tval/125000);   // milliseconds
+  t->tv_usec = (tval/125);      // microseconds
+  t->tv_nsec = nsec;            // nanoseconds 
+}
 */

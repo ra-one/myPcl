@@ -23,7 +23,6 @@
 pthread_mutex_t malloc_lock;
 
 static void *local;
-static int mem;
 
 uintptr_t start;
 
@@ -44,18 +43,11 @@ struct memInfo *info,*infoGlobal,tempInfo;
  * SCCMallocInit creates a new mapping for the SHM and sets the "addr" pointer to the beginning address of this SHM
  */
 
-void SCCMallocInit(uintptr_t *addr,int numMailboxes)
+void SCCMallocInit(uintptr_t *addr)
 {  
   pthread_mutex_init(&malloc_lock, NULL);
   
   pthread_mutex_lock(&malloc_lock);
-  
-  mem = open("/dev/rckncm", O_RDWR|O_SYNC);
-  PRT_ADR("mem: %i\n", mem);
-  if (mem < 0) {
-		fprintf(stderr, "Opening /dev/rckncm failed!\n");
-    exit(-1);
-  }
 
   /* create a new mapping for the SHM  if the addr ptr is unset then the calling 
    * node is the MASTER and has to create the mapping and set the start-address
@@ -70,12 +62,12 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
 	if (*addr==0x0){
 		PRT_ADR("MASTER MMAP\n\n");
     //void *mmap(void *addr, size_t length, int prot, int flags,int fd, off_t offset);
-		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem, alignedAddr);
+		local = mmap(NULL, 		SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, NCMDeviceFD, alignedAddr);
 		
 		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
 		else	munmap(local, SHM_MEMORY_SIZE);
 		
-		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
+		local = mmap((void*)local, 	SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, NCMDeviceFD, alignedAddr);
    	
 		if (local == NULL) { fprintf(stderr, "Couldn't map memory!\n"); exit(-1); }
     
@@ -83,7 +75,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   }else{
 		PRT_ADR("WORKER MMAP\n\n");
 		local=*addr;	
-		local = mmap((void*)local, SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mem, alignedAddr);
+		local = mmap((void*)local, SHM_MEMORY_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, NCMDeviceFD, alignedAddr);
    	if (local == NULL) { fprintf(stderr, "Couldn't map memory!"); exit(-1); }
   }  
 
@@ -92,10 +84,12 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
   info = malloc(sizeof(memInfo*));
   infoGlobal = malloc(sizeof(memInfo*));
   
+  int cores = SCCGetNumCores();
+  
   if(SCCIsMaster()){
-    tempInfo.freePtr = local+10+((48*numMailboxes) * 2);
-    tempInfo.memleft = (SHM_MEMORY_SIZE-(10+(48*numMailboxes)*2));
-    memcpy((void*)(local+((48*numMailboxes) * 2)),(const void*)&tempInfo,sizeof(memInfo)); 
+    tempInfo.freePtr = local+INFOSZ+(MBXSZ*cores);
+    tempInfo.memleft = SHM_MEMORY_SIZE-(INFOSZ+(MBXSZ*cores));
+    memcpy((void*)(local+(MBXSZ*cores)),(const void*)&tempInfo,sizeof(memInfo)); 
     info->freePtr=NULL;
     info->memleft = 0;
   } else {
@@ -103,7 +97,7 @@ void SCCMallocInit(uintptr_t *addr,int numMailboxes)
     info->memleft = 0;
   }
   
-  infoGlobal = (local+((48*numMailboxes) * 2));
+  infoGlobal = (local+(MBXSZ*cores));
   NO_SCRIPT_DBG("start %p, End %p,freelist %p, size B:%zu, KB:%f, MB:%f\n",start,(start+SHM_MEMORY_SIZE),infoGlobal->freePtr,gMemB,gMemKB,gMemMB); 
   
   pthread_mutex_unlock(&malloc_lock);
@@ -134,7 +128,8 @@ void *SCCMallocPtr(size_t size)
    //if(size > 4096) printf("sccMalloc size: %zu, mem left B:%zu, KB:%f, MB:%f\n",size,MemB,MemKB,MemMB);
    
    if (info->memleft < size){
-    info->freePtr = SCCMallocPtrGlobal((16*1024*1024)*counter); // 64 MB chunk at a time 
+    // 16 MB chunk at a time 64MB MAX
+    info->freePtr = SCCMallocPtrGlobal((16*1024*1024)*counter); 
     info->memleft = ((16*1024*1024)*counter); // no space at the end
     if(counter < 4) counter++;
    }
@@ -151,13 +146,13 @@ void *SCCFirstMalloc(void){
   pthread_mutex_lock(&malloc_lock);
 
   if(SCCIsMaster()){
-    // 16 MB chunk at first time 
-    info->freePtr = SCCMallocPtrGlobal((32*1024*1024)-(10+(48*SCCGetNumCores())*2)); 
-    info->memleft = ((32*1024*1024)-(10+(48*SCCGetNumCores())*2)); // no space at the end
+    // 32 MB chunk at first time 
+    info->freePtr = SCCMallocPtrGlobal((32*1024*1024)-(INFOSZ+(MBXSZ*SCCGetNumCores()))); 
+    info->memleft = ((32*1024*1024)-(INFOSZ+(MBXSZ*SCCGetNumCores())));
   } else {
-    // 16 MB chunk at first time 
+    // 8 MB chunk at first time 
     info->freePtr = SCCMallocPtrGlobal(8*1024*1024); 
-    info->memleft = (8*1024*1024); // no space at the end
+    info->memleft = (8*1024*1024);
   }
   
   pthread_mutex_unlock(&malloc_lock);
@@ -172,7 +167,6 @@ void SCCMallocStop(void)
   fprintf(logFile, "%zu#%f#%f\n%zu#%f#%f\n",MemB,MemKB,MemMB,gMemB,gMemKB,gMemMB);
   
   munmap(local, SHM_MEMORY_SIZE);
-  close(mem);
 }
 
 void SCCFreePtr(void *p){ p = NULL;}

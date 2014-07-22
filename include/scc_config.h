@@ -225,6 +225,11 @@ typedef volatile unsigned int         tVUINT32;
 typedef volatile unsigned char* t_vcharp;
 typedef volatile unsigned int* t_vintp;
 
+// RCKMEM devices
+int NCMDeviceFD; // File descriptor for non-cachable memory (e.g. config regs).
+int DCMDeviceFD; // File descriptor for cachable memory.
+int MPBDeviceFD; // File descriptor for message passing buffers.
+
 // DVFS related FPGA registers including factor
 // to calculate human readable value...
 #define DVFS_STATUS_U5VOPWR   0x853C, 0.0004625000
