@@ -443,7 +443,7 @@ void co_call(coroutine_t coro)
 
 void OLDco_call(coroutine_t coro)
 {
-	DCMflush(); 
+	DCMflush(); // in oldCocall
 	cothread_ctx *tctx = co_get_thread_ctx();
 	coroutine *co = (coroutine *) coro;
 	coroutine *oldco = tctx->co_curr;
@@ -454,7 +454,7 @@ void OLDco_call(coroutine_t coro)
 
 	ALL_DBG("pcl.c: SWITCH NOW to %p from %p\n",&co->ctx,&oldco->ctx);
 	co_switch_context(&oldco->ctx, &co->ctx);
-	DCMflush();
+	DCMflush(); // in oldCocall
 }
 
 
