@@ -109,14 +109,14 @@ void SCCMallocInit(uintptr_t *addr)
 void *SCCMallocPtrGlobal(size_t size)
 {
    void* ptr;
-   lock(29);
+   lock(30);
    //printf("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f\n",size,gMemB,gMemKB,gMemMB);
    assert(infoGlobal->memleft >= size);
    ptr = infoGlobal->freePtr;
    infoGlobal->freePtr += size;
    infoGlobal->memleft -= size;
    NO_SCRIPT_DBG("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f, returned %p, \n", size, gMemB, gMemKB, gMemMB, ptr);
-   unlock(29);
+   unlock(30);
    return ptr;  
 }
 

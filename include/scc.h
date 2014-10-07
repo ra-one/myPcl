@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/time.h>
 
 #include "scc_config.h"
 #include "debugging.h"
@@ -26,8 +27,8 @@
 #define SNETGLOBWAIT        (*((volatile int*)(firstMPB + 2))) // on MPB line 0
 #define WAITWORKERS         (*((volatile int*)(firstMPB + 34)))
 #define MALLOCADDR          (firstMPB + 66)
-#define SOSIADDR            (firstMPB + 98)
-#define OBSSET              (*((volatile int*)(firstMPB + 130)))
+#define OBADDR              (firstMPB + 98)
+#define OBSET               (*((volatile int*)(firstMPB + 130)))
 #define TIMEADDR            (firstMPB + 160)
 
 
@@ -76,26 +77,22 @@ extern int DVFS;
 
 // allocate by source, access by sink
 typedef struct {
-	int no_mess; // number of messages to generate
-	int mess_size; // size of each message
-	int num_pipeline; // number of parallel pipelines
-	int sleep_micro; // sleep in micro second
 	int change_mess; //change sleep after this number of messages generated
 	int change_percent; // change sleep by this much %
 	
-	int skip_update;    // skip update frequency by a number of ouput messages, should be >= window_size
-  int window_size;    // window of observing ouput messages
+	int skip_update;    // skip update frequency by a number of output messages, should be >= window_size
+  int window_size;    // window of observing output messages
   int thresh_hold;   //TODO: thresh_hold to change the freq
   
   int skip_count;     //count number of output
   
   double *output_interval;  // window of output interval
   int output_index;     // index in the window of observed output rate
-  double last_output; // timestamp of last output
+  struct timeval last_output; // timestamp of last output
 
   double input_rate;
   double output_rate;
-  
+  double volt;
   int freq;
 } observer_t;
 
@@ -109,6 +106,7 @@ int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain);
 int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain);
 void startPowerMeasurement(int start);
 void powerMeasurement(FILE *fileHand);
+int isDvfsActive();
 
 typedef struct{
   unsigned long    tv_sec;    // seconds 
