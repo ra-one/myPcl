@@ -76,6 +76,7 @@ static const int RC_domains[6][4]={ // 4 5 7 0 1 3
 static int VCCADDRP[] = {0x8414,0x8418,0x8400,0x8404,0x8408,0x8410}; // 4 5 7 0 1 3
 static int* VCCADDRV[6];
 static int PD[] = {4,5,7,0,1,3};
+static int changeVLT = 1;
 
 t_vintp fChange_vAddr[CORES/2];
 t_vintp RPC_virtual_address; // only one RPC on chip
@@ -208,7 +209,11 @@ void SCCInit(){
       int fdiv = read_current_frequency(RC_domains[i][0]);
       RC_current_val[i].current_freq_div = fdiv;
       RC_current_val[i].current_volt_level = RC_voltage_level(fdiv); 
+      //printf("logical domain %d, fdiv %d, vlt %d\n",i,RC_current_val[i].current_freq_div,RC_current_val[i].current_volt_level);
     }
+
+    //printf("freq %d, vlt %f\n",RC_frequency_change_words[RC_current_val[0].current_freq_div][2],RC_V_MHz_cap[RC_current_val[0].current_volt_level].volt);
+    
     // set all inactive domains to minimum if DVFS is enabled
     //if(DVFS) set_min_freq();
   }
@@ -220,8 +225,7 @@ void SCCInit(){
     allMbox[i] = (void*)temp;
     temp = (void*)temp + MBXSZ;
     PRT_MBX("scc.c: allMbox[%d] %p\n",i,allMbox[i]);
-  }
-  
+  } 
   startTime = SCCGetTime();
   NO_SCRIPT_DBG( "****************************\nSCC INIT at %f\n",startTime);
 }
@@ -332,6 +336,11 @@ void setSCCVars(){
 
   num_cores = num_worker + num_wrapper;
   
+  if(DVFS > 1) {
+    DVFS = 1;
+    changeVLT = 0;
+  }
+  
   masterFile = fopen("/shared/nil/Out/master.txt", "w");
   if (masterFile == NULL)fprintf(stderr, "Can't open output file /shared/nil/Out/master.txt for master!\n");
   
@@ -386,63 +395,6 @@ void remapLUT(int myCoreID) {
     *(int*)(MappedAddr+pageOffset) = value;
     value++;
     page++;
-    //printf(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
-    munmap((void*)MappedAddr, page_size);
-  }
-}
-
-
-void remapLUT1(int myCoreID) {
-  // coreID is Z coordinate
-  int page_size, i,NCMDeviceFD;
-
-  t_vcharp     MappedAddr;
-  unsigned int result,alignedAddr, pageOffset, ConfigAddr;
-  unsigned int ConfigAddrLUT;
-  
-  page_size  = getpagesize(); // set page size
-  
-  int lutValArr[] ={
-  6181,6182,6183,6184, 45093,45094,45095,45096, 268325,268326,268327,268328, 307237,307238,307239,307240,
-	6222,6223,6224,6225, 45134,45135,45136,45137, 268366,268367,268368,268369, 307278,307279,307280,307281,
-	6263,6264,6265,6266, 45175,45176,45177,45178, 268407,268408,268409,268410, 307319,307320,307321,307322,
-	6304,6305,6306,6307, 45216,45217,45218,45219, 268448,268449,268450,268451, 307360,307361,307362,307363,
-	6345,6346,6347,6348, 45257,45258,45259,45260, 268489,268490,268491,268492, 307401,307402,307403,307404,
-	6386,6387,6388,6389, 45298,45299,45300,45301, 268530,268531,268532,268533, 307442,307443,307444,307445,
-	6427,6428,6429,6430, 45339,45340,45341,45342, 268571,268572,268573,268574, 307483,307484,307485,307486,
-	6468,6469,6470,6471, 45380,45381,45382,45383, 268612,268613,268614,268615, 307524,307525,307526,307527,
-	6509,6510,6511,6512, 45421,45422,45423,45424, 268653,268654,268655,268656, 307565,307566,307567,307568,
-	6550,6551,6552,6553, 45462,45463,45464,45465, 268694,268695,268696,268697, 307606,307607,307608,307609,
-	6591,6592,6593,6594, 45503,45504,45505,45506, 268735,268736,268737,268738, 307647,307648,307649,307650,
-	6632,6633,6634,6635, 45544,45545,45546,45547, 268776,268777,268778,268779, 307688,307689,307690,307691};
-  
-  if ((NCMDeviceFD=open("/dev/rckncm", O_RDWR|O_SYNC))<0) {
-    perror("open"); exit(-1);
-  }
-  
-  if(myCoreID==1){ 
-    ConfigAddrLUT = CRB_OWN+LUT1; 
-  } else { 
-    ConfigAddrLUT = CRB_OWN+LUT0; 
-  }
-
-  unsigned int lutSlot = START_PAGE, max = END_PAGE; // max mem is 944 M
-  int idx=0;
-  unsigned int value;
-  
-  for(lutSlot; lutSlot<=max;lutSlot++){
-    value = lutValArr[idx++]; // get next value from array
-
-    ConfigAddr = ConfigAddrLUT + (lutSlot*0x08);
-    alignedAddr = ConfigAddr & (~(page_size-1));
-    pageOffset  = ConfigAddr - alignedAddr;
-    
-    MappedAddr = (t_vcharp) mmap(NULL, page_size, PROT_WRITE|PROT_READ, MAP_SHARED, NCMDeviceFD, alignedAddr);
-    if (MappedAddr == MAP_FAILED) {
-      perror("mmap");exit(-1);
-    }
-    //printf("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
-    *(int*)(MappedAddr+pageOffset) = value;
     //printf(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
     munmap((void*)MappedAddr, page_size);
   }
@@ -503,74 +455,114 @@ void set_min_freq(){
   }
 }
 
-void change_freq(int inc){
+void change_freq(double prop, char c){
   static int first=1;
   static observer_t *obs;
-  
-  if(!DVFS){
-    fprintf(masterFile,"Frequency can not be changed, DVFS is disabled\n");
-    return;
-  }
-  
-  // do not change anything on active domain0 as it runs master
-  int reqFreqDiv = -1,i,retVal;
-
-  if(inc){// increase freq go up in table
-    fprintf(masterFile,"\nMaster: increase frequency\n");
-    reqFreqDiv = RC_current_val[0].current_freq_div - 1;
-  } else { // decrease freq go down in table
-    fprintf(masterFile,"\nMaster: decrease frequency\n");
-    reqFreqDiv = RC_current_val[0].current_freq_div + 1;
-  }
-  //fflush(masterFile);
-      
-  
-  if (reqFreqDiv > RC_MAX_FREQUENCY_DIVIDER){
-    fprintf(masterFile,"Frequency can not be changed at this point, already min\n");
-    return;
-  } else if (reqFreqDiv < RC_MIN_FREQUENCY_DIVIDER){
-    fprintf(masterFile,"Frequency can not be changed at this point, already max\n");
-    return;
-  }
   
   // get observer address
   if(first){
     while (OBSET !=9);
     first=0; 
     memcpy((void*)&obs, (const void*)OBADDR, sizeof(observer_t*));
+    obs->freq = RC_frequency_change_words[RC_current_val[0].current_freq_div][2];
+    obs->volt = RC_V_MHz_cap[RC_current_val[0].current_volt_level].volt;
+    printf("change freq freq %d, vlt %f\n",RC_frequency_change_words[RC_current_val[0].current_freq_div][2],RC_V_MHz_cap[RC_current_val[0].current_volt_level].volt);
+    printf("MSTR: obs->window_size %d, obs->thresh_hold %f, obs->skip_update %d\n",obs->window_size, obs->thresh_hold, obs->skip_update);
   }
 
+  if(!DVFS || !obs->startChange){
+    fprintf(masterFile,"Frequency can not be changed, DVFS is disabled\n");
+    return;
+  }
+  
+  // do not change anything on active domain0 as it runs master
+  int reqFreqDiv = -1,currFreqDiv=-1,i,retVal;
+  double reqFreq = 0.0;
+  
+  currFreqDiv = RC_current_val[0].current_freq_div;
+  
+  // increase already max
+  if(prop > 0.0 && currFreqDiv == RC_MIN_FREQUENCY_DIVIDER) {
+    fprintf(masterFile,"\nMaster: Freq already maximum at %d\n",RC_frequency_change_words[currFreqDiv][2]);
+    return;
+  } else if (prop < 0.0 && currFreqDiv == RC_MAX_FREQUENCY_DIVIDER){   // decrease already min
+    fprintf(masterFile,"\nMaster: Freq already minimum at %d\n",RC_frequency_change_words[currFreqDiv][2]);
+    return;
+  }
+  
+  
+  reqFreq  = (1+prop)*RC_frequency_change_words[currFreqDiv][2];
+  
+  fprintf(masterFile,"\nMaster: FREQCHANGE %c,  prop %f, currFreq %d, reqFreq %f\n",c,prop,RC_frequency_change_words[currFreqDiv][2],reqFreq);
+  
+  if(prop > 0.0){ // increase
+    fprintf(masterFile,"\nMaster: th %f, increase frequency by %f\n",obs->thresh_hold,prop);
+    for(i=(currFreqDiv-1);i>=RC_MIN_FREQUENCY_DIVIDER;i--){
+      if(RC_frequency_change_words[i][2] > reqFreq){
+        reqFreqDiv = i;
+        break;
+      }
+    } 
+  } else { // decrease
+    if(currFreqDiv == 15 ) {
+      reqFreqDiv = currFreqDiv + 1;
+    } else {
+      reqFreqDiv = currFreqDiv + 2;
+    }
+    
+    fprintf(masterFile,"\nMaster: decrease frequency to %d from %d\n",RC_frequency_change_words[reqFreqDiv][2],RC_frequency_change_words[currFreqDiv][2]);
+  /*
+    fprintf(masterFile,"\nMaster: th 0.2, decrease frequency by %f\n",prop);
+    for(i=(currFreqDiv+1);i<=RC_MAX_FREQUENCY_DIVIDER;i++){
+      if(reqFreq > RC_frequency_change_words[i][2]){
+        reqFreqDiv = i-1; // select previous one
+        break;
+      }
+    } 
+  */
+  } 
+  
+  if (reqFreqDiv == currFreqDiv) {
+  	fprintf(masterFile,"Frequency can not be changed, as requested is same as current\n");
+  	return;
+ 	}
+  
+  if (reqFreqDiv < 0){
+    fprintf(masterFile,"Frequency can not be changed at this point, reqFreqDiv is -1\n");
+    return;
+  }
+  
+  if (reqFreqDiv > 16){
+    fprintf(masterFile,"Frequency can not be changed at this point, reqFreqDiv iscan not be > 16\n");
+    return;
+  }
+  
+  /*
+  if (reqFreqDiv >= RC_MAX_FREQUENCY_DIVIDER){
+    fprintf(masterFile,"Frequency can not be changed at this point, already min\n");
+    return;
+  } else if (reqFreqDiv <= RC_MIN_FREQUENCY_DIVIDER){
+    fprintf(masterFile,"Frequency can not be changed at this point, already max\n");
+    return;
+  }*/
   
   int new_Fdiv,new_Vlevel;
 
   for(i=0;i<RC_VOLTAGE_DOMAINS;i++){
     retVal = set_freq_volt_level(reqFreqDiv, &new_Fdiv, &new_Vlevel, i);
     if(retVal == -1 ) {
-      fprintf(stderr,"domain %d PD %d frequency can not be changed\n\n\n",i,PD[i]);
+      //fprintf(stderr,"domain %d PD %d frequency can not be changed\n\n\n",i,PD[i]);
       fprintf(masterFile,"domain %d PD %d frequency can not be changed\n",i,PD[i]);
     } else {
-      fprintf(stderr,"domain %d PD %d frequency changed to %d\n\n\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2]);
-      fprintf(masterFile,"domain %d PD %d frequency %d time %f\n\n\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2],SCCGetTime());
+      //fprintf(stderr,"domain %d PD %d frequency changed to %d\n\n\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2]);
+      fprintf(masterFile,"domain %d PD %d frequency %d from %d time %f\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2],RC_frequency_change_words[currFreqDiv][2],SCCGetTime());
     }
-  }// change freq in obs for sink
-  /*
-  for(i=1;i<RC_VOLTAGE_DOMAINS;i++){
-    if(activeDomains[i] == 1){
-      retVal = set_freq_volt_level(reqFreqDiv, &new_Fdiv, &new_Vlevel, i);
-      if(retVal == -1 ) {
-        fprintf(stderr,"domain %d PD %d frequency can not be changed\n\n\n",i,PD[i]);
-        fprintf(masterFile,"domain %d PD %d frequency can not be changed\n",i,PD[i]);
-      } else {
-        fprintf(stderr,"domain %d PD %d frequency changed to %d\n\n\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2]);
-        fprintf(masterFile,"domain %d PD %d frequency %d time %f\n\n\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2],SCCGetTime());
-      }
-    }
-  }// change freq in obs for sink */
+  }
   
   obs->freq = RC_frequency_change_words[new_Fdiv][2];
   obs->volt = RC_V_MHz_cap[new_Vlevel].volt;
   //start timer for message skip in sink
-  obs->skip_count = 0;
+  //obs->skip_count = 0;
 }
 
 int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain) {
@@ -640,7 +632,7 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
     RC_current_val[domain].current_freq_div = Fdiv;
   } 
   
-  if(changeVoltLvl){
+  if(changeVoltLvl && changeVLT){
     // write the VID word to RPC, need to send in physical domain
     unsigned int VID = VID_word(RC_V_MHz_cap[Vlevel].volt, PD[domain]);
     *RPC_virtual_address = VID;
@@ -672,8 +664,8 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
     }while(!changed);
     fprintf(masterFile,"Volt int after change:  %f, %d\n",volRead,getInt(volRead));
     //fflush(masterFile);
+    RC_current_val[domain].current_volt_level = Vlevel;
   }
-  RC_current_val[domain].current_volt_level = Vlevel;
   
   // if we asked for a decrease in the clock divider (increase in freq), apply it 
   // now, after the required target voltage has been reached.
@@ -752,6 +744,7 @@ int getInt(float voltage)
 int isDvfsActive(){
   return DVFS;
 }
+
 //////////////////////////////////////////////////////////////////////////////////////// 
 // End of Power and freq functions
 //////////////////////////////////////////////////////////////////////////////////////// 
@@ -961,3 +954,85 @@ void remapLUT(int myCoreID) {
   }
 }
 */
+
+/*
+// popshm style
+void remapLUT1(int myCoreID) {
+  // coreID is Z coordinate
+  int page_size, i,NCMDeviceFD;
+
+  t_vcharp     MappedAddr;
+  unsigned int result,alignedAddr, pageOffset, ConfigAddr;
+  unsigned int ConfigAddrLUT;
+  
+  page_size  = getpagesize(); // set page size
+  
+  int lutValArr[] ={
+  6181,6182,6183,6184, 45093,45094,45095,45096, 268325,268326,268327,268328, 307237,307238,307239,307240,
+	6222,6223,6224,6225, 45134,45135,45136,45137, 268366,268367,268368,268369, 307278,307279,307280,307281,
+	6263,6264,6265,6266, 45175,45176,45177,45178, 268407,268408,268409,268410, 307319,307320,307321,307322,
+	6304,6305,6306,6307, 45216,45217,45218,45219, 268448,268449,268450,268451, 307360,307361,307362,307363,
+	6345,6346,6347,6348, 45257,45258,45259,45260, 268489,268490,268491,268492, 307401,307402,307403,307404,
+	6386,6387,6388,6389, 45298,45299,45300,45301, 268530,268531,268532,268533, 307442,307443,307444,307445,
+	6427,6428,6429,6430, 45339,45340,45341,45342, 268571,268572,268573,268574, 307483,307484,307485,307486,
+	6468,6469,6470,6471, 45380,45381,45382,45383, 268612,268613,268614,268615, 307524,307525,307526,307527,
+	6509,6510,6511,6512, 45421,45422,45423,45424, 268653,268654,268655,268656, 307565,307566,307567,307568,
+	6550,6551,6552,6553, 45462,45463,45464,45465, 268694,268695,268696,268697, 307606,307607,307608,307609,
+	6591,6592,6593,6594, 45503,45504,45505,45506, 268735,268736,268737,268738, 307647,307648,307649,307650,
+	6632,6633,6634,6635, 45544,45545,45546,45547, 268776,268777,268778,268779, 307688,307689,307690,307691};
+  
+  if ((NCMDeviceFD=open("/dev/rckncm", O_RDWR|O_SYNC))<0) {
+    perror("open"); exit(-1);
+  }
+  
+  if(myCoreID==1){ 
+    ConfigAddrLUT = CRB_OWN+LUT1; 
+  } else { 
+    ConfigAddrLUT = CRB_OWN+LUT0; 
+  }
+
+  unsigned int lutSlot = START_PAGE, max = END_PAGE; // max mem is 944 M
+  int idx=0;
+  unsigned int value;
+  
+  for(lutSlot; lutSlot<=max;lutSlot++){
+    value = lutValArr[idx++]; // get next value from array
+
+    ConfigAddr = ConfigAddrLUT + (lutSlot*0x08);
+    alignedAddr = ConfigAddr & (~(page_size-1));
+    pageOffset  = ConfigAddr - alignedAddr;
+    
+    MappedAddr = (t_vcharp) mmap(NULL, page_size, PROT_WRITE|PROT_READ, MAP_SHARED, NCMDeviceFD, alignedAddr);
+    if (MappedAddr == MAP_FAILED) {
+      perror("mmap");exit(-1);
+    }
+    //printf("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    *(int*)(MappedAddr+pageOffset) = value;
+    //printf(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    munmap((void*)MappedAddr, page_size);
+  }
+}*/
+
+
+/*  
+  if(prop > 0.0){ // increase
+    fprintf(masterFile,"\nMaster: th %f, increase frequency by %f\n",obs->thresh_hold,prop);
+    for(i=currFreqDiv;i>=RC_MIN_FREQUENCY_DIVIDER;i--){
+      if(reqFreq > RC_frequency_change_words[i][2]){
+        reqFreqDiv = i;
+      }
+    } 
+  } else { // decrease
+  
+    reqFreqDiv = currFreqDiv + 2;
+    fprintf(masterFile,"\nMaster: decrease frequency to %d from %d\n",RC_frequency_change_words[reqFreqDiv][2],RC_frequency_change_words[currFreqDiv][2]);
+  /*
+    fprintf(masterFile,"\nMaster: th 0.2, decrease frequency by %f\n",prop);
+    for(i=currFreqDiv;i<=RC_MAX_FREQUENCY_DIVIDER;i++){
+      if(reqFreq > RC_frequency_change_words[i][2]){
+        reqFreqDiv = i;
+      }
+    } 
+  *
+  } 
+*/  

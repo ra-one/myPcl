@@ -82,9 +82,10 @@ typedef struct {
 	
 	int skip_update;    // skip update frequency by a number of output messages, should be >= window_size
   int window_size;    // window of observing output messages
-  int thresh_hold;   //TODO: thresh_hold to change the freq
+  double thresh_hold;   //TODO: thresh_hold to change the freq
   
   int skip_count;     //count number of output
+  int startChange;	 // start changing freq and inp rate
   
   double *output_interval;  // window of output interval
   int output_index;     // index in the window of observed output rate
@@ -99,7 +100,7 @@ typedef struct {
 extern observer_t *obs;
 
 void set_min_freq();
-void change_freq(int inc);
+void change_freq(double prop,char c);
 
 
 int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain);
