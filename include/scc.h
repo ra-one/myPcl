@@ -32,6 +32,12 @@
 #define TIMEADDR            (firstMPB + 160)
 
 
+#define FREQFLAG            (*((volatile int*)(firstMPB + 194)))
+#define FREQPROP            (*((volatile double*)(firstMPB + 226)))
+#define DEMA                (*((volatile double*)(firstMPB + 258)))
+
+
+
 /* Power defines */
 #define RC_MAX_FREQUENCY_DIVIDER     16  // maximum divider value, so lowest F
 #define RC_MIN_FREQUENCY_DIVIDER     2   // minimum divider value, so highest F
@@ -116,6 +122,8 @@ typedef struct{
 
 void SCCGetTimeAll(timespecSCC *t);
 double SCCGetTime();               /* sec  (seconds) */
+unsigned long long SCCGetTimMS(); 
+unsigned long long SCCGetTimNS(); 
 
 /* Support Functions */
 void SCCInit();
@@ -157,6 +165,17 @@ static inline void unlock(int core) {
  printf("------------------------------------- Lock Released %p %f\n",locks[core],SCCGetTime());
 }
 #else
+/* Semantics of test&set register: a read returns zero if another core has
+ * previously read it and no reset has occurred since then. Otherwise, the read
+ * returns one.
+ */
+ 
+/* Try to lock the HW lock.
+ * \param[in] id : HW lock id (0~47).
+ * \retval 1 : got and held the lock.
+ * \retval 0 : didn't get the lock.
+ */
+static inline int tryLock(int core) { return *(int *) locks[core] & 0x01; }
 static inline void lock(int core) { while (!(*locks[core] & 0x01)); }
 static inline void unlock(int core) { *locks[core] = 0; }
 #endif // _nodbg_

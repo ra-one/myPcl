@@ -457,10 +457,10 @@ void set_min_freq(){
 
 void change_freq(double prop, char c){
   static int first=1;
-  static observer_t *obs;
+  static observer_t *obs = NULL;
   
   // get observer address
-  if(first){
+  if(first && prop > 0.0){
     while (OBSET !=9);
     first=0; 
     memcpy((void*)&obs, (const void*)OBADDR, sizeof(observer_t*));
@@ -468,6 +468,11 @@ void change_freq(double prop, char c){
     obs->volt = RC_V_MHz_cap[RC_current_val[0].current_volt_level].volt;
     printf("change freq freq %d, vlt %f\n",RC_frequency_change_words[RC_current_val[0].current_freq_div][2],RC_V_MHz_cap[RC_current_val[0].current_volt_level].volt);
     printf("MSTR: obs->window_size %d, obs->thresh_hold %f, obs->skip_update %d\n",obs->window_size, obs->thresh_hold, obs->skip_update);
+  }
+
+  if(obs == NULL) {
+    fprintf(masterFile,"Frequency can not be changed, DVFS is disabled obs NULL\n");
+    return;
   }
 
   if(!DVFS || !obs->startChange){
@@ -496,30 +501,11 @@ void change_freq(double prop, char c){
   fprintf(masterFile,"\nMaster: FREQCHANGE %c,  prop %f, currFreq %d, reqFreq %f\n",c,prop,RC_frequency_change_words[currFreqDiv][2],reqFreq);
   
   if(prop > 0.0){ // increase
-    fprintf(masterFile,"\nMaster: th %f, increase frequency by %f\n",obs->thresh_hold,prop);
-    for(i=(currFreqDiv-1);i>=RC_MIN_FREQUENCY_DIVIDER;i--){
-      if(RC_frequency_change_words[i][2] > reqFreq){
-        reqFreqDiv = i;
-        break;
-      }
-    } 
+    reqFreqDiv = currFreqDiv - 1;
+    fprintf(masterFile,"\nMaster: increase frequency to %d\n",RC_frequency_change_words[reqFreqDiv][2]);  
   } else { // decrease
-    if(currFreqDiv == 15 ) {
-      reqFreqDiv = currFreqDiv + 1;
-    } else {
-      reqFreqDiv = currFreqDiv + 2;
-    }
-    
-    fprintf(masterFile,"\nMaster: decrease frequency to %d from %d\n",RC_frequency_change_words[reqFreqDiv][2],RC_frequency_change_words[currFreqDiv][2]);
-  /*
-    fprintf(masterFile,"\nMaster: th 0.2, decrease frequency by %f\n",prop);
-    for(i=(currFreqDiv+1);i<=RC_MAX_FREQUENCY_DIVIDER;i++){
-      if(reqFreq > RC_frequency_change_words[i][2]){
-        reqFreqDiv = i-1; // select previous one
-        break;
-      }
-    } 
-  */
+    reqFreqDiv = currFreqDiv + 1;
+    fprintf(masterFile,"\nMaster: decrease frequency to %d\n",RC_frequency_change_words[reqFreqDiv][2]);
   } 
   
   if (reqFreqDiv == currFreqDiv) {
@@ -532,20 +518,6 @@ void change_freq(double prop, char c){
     return;
   }
   
-  if (reqFreqDiv > 16){
-    fprintf(masterFile,"Frequency can not be changed at this point, reqFreqDiv iscan not be > 16\n");
-    return;
-  }
-  
-  /*
-  if (reqFreqDiv >= RC_MAX_FREQUENCY_DIVIDER){
-    fprintf(masterFile,"Frequency can not be changed at this point, already min\n");
-    return;
-  } else if (reqFreqDiv <= RC_MIN_FREQUENCY_DIVIDER){
-    fprintf(masterFile,"Frequency can not be changed at this point, already max\n");
-    return;
-  }*/
-  
   int new_Fdiv,new_Vlevel;
 
   for(i=0;i<RC_VOLTAGE_DOMAINS;i++){
@@ -555,12 +527,11 @@ void change_freq(double prop, char c){
       fprintf(masterFile,"domain %d PD %d frequency can not be changed\n",i,PD[i]);
     } else {
       //fprintf(stderr,"domain %d PD %d frequency changed to %d\n\n\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2]);
-      fprintf(masterFile,"domain %d PD %d frequency %d from %d time %f\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2],RC_frequency_change_words[currFreqDiv][2],SCCGetTime());
+      obs->freq = RC_frequency_change_words[new_Fdiv][2];
+      obs->volt = RC_V_MHz_cap[new_Vlevel].volt;
+      fprintf(masterFile,"OBS domain %d PD %d frequency %d from %d time %f\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2],RC_frequency_change_words[currFreqDiv][2],SCCGetTime());
     }
   }
-  
-  obs->freq = RC_frequency_change_words[new_Fdiv][2];
-  obs->volt = RC_V_MHz_cap[new_Vlevel].volt;
   //start timer for message skip in sink
   //obs->skip_count = 0;
 }
@@ -664,8 +635,8 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
     }while(!changed);
     fprintf(masterFile,"Volt int after change:  %f, %d\n",volRead,getInt(volRead));
     //fflush(masterFile);
-    RC_current_val[domain].current_volt_level = Vlevel;
   }
+  RC_current_val[domain].current_volt_level = Vlevel;
   
   // if we asked for a decrease in the clock divider (increase in freq), apply it 
   // now, after the required target voltage has been reached.
@@ -783,6 +754,30 @@ void SCCGetTimeAll(timespecSCC *t){
   
   t->tv_sec =  sec;
   t->tv_nsec = nsec;
+}
+
+/*
+ * Note that this will only last for about 232/106 =~ 4295 seconds, 
+ * or roughly 71 minutes though (on a typical 32-bit system).
+*/
+unsigned long long SCCGetTimMS(){
+  unsigned long long tval = gtsc();
+  unsigned long long nsec,sec;
+  
+  sec =  (tval/125000000);
+  nsec = (((tval*1000)/125) - (sec * 1.e9));
+  
+  return (1000000 * sec + (nsec/1000));
+}
+
+unsigned long long SCCGetTimNS(){
+  unsigned long long tval = gtsc();
+  unsigned long long nsec,sec;
+  
+  sec =  (tval/125000000);
+  nsec = (((tval*1000)/125) - (sec * 1.e9));
+  
+  return (1000000000 * sec + nsec);
 }
 
 //--------------------------------------------------------------------------------------
@@ -1036,3 +1031,46 @@ void remapLUT1(int myCoreID) {
   *
   } 
 */  
+
+
+
+
+  // if(prop > 0.0){ // increase
+    // reqFreqDiv = currFreqDiv - 1;
+    // fprintf(masterFile,"\nMaster: increase frequency to %d\n",RC_frequency_change_words[reqFreqDiv][2]);
+  // /*
+    // fprintf(masterFile,"\nMaster: th %f, increase frequency by %f\n",obs->thresh_hold,prop);
+    // for(i=(currFreqDiv-1);i>=RC_MIN_FREQUENCY_DIVIDER;i--){
+      // if(RC_frequency_change_words[i][2] > reqFreq){
+        // reqFreqDiv = i;
+        // break;
+      // }
+    // }
+  // */    
+  // } else { // decrease
+    // /*fprintf(masterFile,"\nMaster: th 0.2, decrease frequency by %f\n",prop);
+    // for(i=(currFreqDiv+1);i<=RC_MAX_FREQUENCY_DIVIDER;i++){
+      // if(reqFreq <= RC_frequency_change_words[i][2]){
+        // reqFreqDiv = i;
+      // }
+    // }*/
+    // reqFreqDiv = currFreqDiv + 1;
+    // fprintf(masterFile,"\nMaster: decrease frequency to %d\n",RC_frequency_change_words[reqFreqDiv][2]);
+  // }
+// /*
+    // if(currFreqDiv == 15 ) {
+      // reqFreqDiv = currFreqDiv + 1;
+    // } else {
+      // reqFreqDiv = currFreqDiv + 2;
+    // }
+    
+    // fprintf(masterFile,"\nMaster: decrease frequency to %d from %d\n",RC_frequency_change_words[reqFreqDiv][2],RC_frequency_change_words[currFreqDiv][2]);
+// /*
+    // fprintf(masterFile,"\nMaster: th 0.2, decrease frequency by %f\n",prop);
+    // for(i=(currFreqDiv+1);i<=RC_MAX_FREQUENCY_DIVIDER;i++){
+      // if(reqFreq > RC_frequency_change_words[i][2]){
+        // reqFreqDiv = i-1; // select previous one
+        // break;
+      // }
+    // } 
+// */
