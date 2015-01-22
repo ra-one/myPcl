@@ -17,6 +17,8 @@
 FILE *masterFile;
 FILE *logFile;
 long long int requestServiced = 0;
+static observer_t *obs = NULL;
+pthread_mutexattr_t attr;
 
 //used to write SHM start address into MPB
 uintptr_t  addr=0x0;
@@ -29,7 +31,7 @@ AIR atomic_inc_regs[2*CORES];
 
 // global variables for power management
 static triple RC_V_MHz_cap[] = {
-/* 0 */ {0.9, 0x90, 460},
+/* 0 */ {0.9, 0x90, 644}, //{0.9, 0x90, 460} changed as all level are same
 /* 1 */ {0.9, 0x90, 598},
 /* 2 */ {0.9, 0x90, 644},
 /* 3 */ {1.0, 0xA0, 748},
@@ -188,8 +190,13 @@ void SCCInit(){
     atomic_inc_regs[cpu].counter = (int *) MallocConfigReg(air_baseE + (8*cpu));
     atomic_inc_regs[cpu].init    = (int *) MallocConfigReg(air_baseE + (8*cpu) + 4);
     
+     //SECOND SET OF AIR
+    atomic_inc_regs[CORES+cpu].counter = (int *) MallocConfigReg(air_baseF + (8*cpu));
+    atomic_inc_regs[CORES+cpu].init =  (int *) MallocConfigReg(air_baseF + (8*cpu) + 4);
+    
     if(SCCIsMaster()){
       *atomic_inc_regs[cpu].init = 0;
+      *atomic_inc_regs[CORES+cpu].init = 0;
       unlock(cpu);
     }
   }
@@ -207,6 +214,7 @@ void SCCInit(){
     //get_divider(node_id);
     for (i=0; i<RC_VOLTAGE_DOMAINS; i++){
       int fdiv = read_current_frequency(RC_domains[i][0]);
+      //int vlvl = 
       RC_current_val[i].current_freq_div = fdiv;
       RC_current_val[i].current_volt_level = RC_voltage_level(fdiv); 
       //printf("logical domain %d, fdiv %d, vlt %d\n",i,RC_current_val[i].current_freq_div,RC_current_val[i].current_volt_level);
@@ -216,6 +224,8 @@ void SCCInit(){
     
     // set all inactive domains to minimum if DVFS is enabled
     //if(DVFS) set_min_freq();
+    
+    // copy observer address to MPB so src/sink can get it
   }
   
   //assign mailbox address into array
@@ -226,6 +236,29 @@ void SCCInit(){
     temp = (void*)temp + MBXSZ;
     PRT_MBX("scc.c: allMbox[%d] %p\n",i,allMbox[i]);
   } 
+  
+  if(SCCIsMaster()){
+    obs = (observer_t *) SCCMallocPtr(sizeof(observer_t));
+    obs->startChange = 0;
+    memcpy((void*)OBADDR, (const void*)&obs, sizeof(observer_t*));
+    //OBSET = 9;
+    printf("Observer address master: %p\n",obs);
+    
+    /* Init arry of linked list */
+    mem_free_arr = SCCMallocPtr(48*sizeof(block_t_free));
+    for (i=0;i<48;i++){
+      mem_free_arr[i].list = NULL;
+    }
+    
+    memcpy((void*)MEM_FREE_LL, (const void*)&mem_free_arr, sizeof(block_t_free*));
+    printf("mem_free_arr address master: %p\n",mem_free_arr);
+    OBSET = 9;
+  } else {
+    while(OBSET != 9);
+    memcpy((void*)&mem_free_arr, (const void*)MEM_FREE_LL, sizeof(block_t_free*));
+    printf("mem_free_arr address worker: %p\n",mem_free_arr);
+  }
+    
   startTime = SCCGetTime();
   NO_SCRIPT_DBG( "****************************\nSCC INIT at %f\n",startTime);
 }
@@ -234,6 +267,7 @@ void SCCInit(){
 // FUNCTION: free all config registers and close shared memory
 //--------------------------------------------------------------------------------------
 void SCCStop(){
+  //SCC_Free_Ptr_rpc_to_local();
   unsigned char cpu;
   int i,offset;
   double stopTime;
@@ -250,6 +284,9 @@ void SCCStop(){
     //First SET OF AIR
     FreeConfigReg((int*) atomic_inc_regs[cpu].counter);
     FreeConfigReg((int*) atomic_inc_regs[cpu].init);
+    
+    FreeConfigReg((int*) atomic_inc_regs[CORES+cpu].counter);
+    FreeConfigReg((int*) atomic_inc_regs[CORES+cpu].init);
   }
   if(SCCIsMaster()){
     FreeConfigReg((int*) RPC_virtual_address);
@@ -434,12 +471,8 @@ void powerMeasurement(FILE *fileHand){
   unsigned int currenti = *(int*)C3v3SCC;
   double volt = (double)volti * 0.0002500000; //0.004;
   double current = (double)currenti * 0.0062490250; //0.0990099;
-  
-  //fprintf(fileHand,"V %f \tA %f \tT %f\n", volt, current,SCCGetTime());
-  //fprintf(fileHand,"V,%f,A,%f#", volt, current);
+ 
   fprintf(fileHand,"%f,%f#", volt, current);
-  //fflush(fileHand);
-  //fprintf(stderr,"V %f \tA %f\n", volt, current);
 }
 
 void set_min_freq(){
@@ -456,31 +489,11 @@ void set_min_freq(){
 }
 
 void change_freq(double prop, char c){
-  static int first=1;
-  static observer_t *obs = NULL;
-  
-  // get observer address
-  if(first && prop > 0.0){
-    while (OBSET !=9);
-    first=0; 
-    memcpy((void*)&obs, (const void*)OBADDR, sizeof(observer_t*));
-    obs->freq = RC_frequency_change_words[RC_current_val[0].current_freq_div][2];
-    obs->volt = RC_V_MHz_cap[RC_current_val[0].current_volt_level].volt;
-    printf("change freq freq %d, vlt %f\n",RC_frequency_change_words[RC_current_val[0].current_freq_div][2],RC_V_MHz_cap[RC_current_val[0].current_volt_level].volt);
-    printf("MSTR: obs->window_size %d, obs->thresh_hold %f, obs->skip_update %d\n",obs->window_size, obs->thresh_hold, obs->skip_update);
-  }
-
-  if(obs == NULL) {
-    fprintf(masterFile,"Frequency can not be changed, DVFS is disabled obs NULL\n");
-    return;
-  }
-
   if(!DVFS || !obs->startChange){
     fprintf(masterFile,"Frequency can not be changed, DVFS is disabled\n");
     return;
   }
   
-  // do not change anything on active domain0 as it runs master
   int reqFreqDiv = -1,currFreqDiv=-1,i,retVal;
   double reqFreq = 0.0;
   
@@ -529,7 +542,7 @@ void change_freq(double prop, char c){
       //fprintf(stderr,"domain %d PD %d frequency changed to %d\n\n\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2]);
       obs->freq = RC_frequency_change_words[new_Fdiv][2];
       obs->volt = RC_V_MHz_cap[new_Vlevel].volt;
-      fprintf(masterFile,"OBS domain %d PD %d frequency %d from %d time %f\n",i,PD[i],RC_frequency_change_words[new_Fdiv][2],RC_frequency_change_words[currFreqDiv][2],SCCGetTime());
+      fprintf(masterFile,"OBS domain %d PD %d at %f, frequency %d to %d\n",i,PD[i],SCCGetTime(),RC_frequency_change_words[currFreqDiv][2],RC_frequency_change_words[new_Fdiv][2]);
     }
   }
   //start timer for message skip in sink
@@ -590,6 +603,8 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
   
   // only change volts if its different then previous level
   changeVoltLvl = (RC_current_val[domain].current_volt_level != Vlevel);
+  
+  fprintf(masterFile,"\nMaster: curr Vl %d req VL %d, !=  %d\n\n",RC_current_val[domain].current_volt_level,Vlevel,(RC_current_val[domain].current_volt_level != Vlevel));  
   
   // if new frequency divider greater than current (decrease freq), adjust frequency immediately;
   // this can always be done safely if the current power state is feasible
@@ -693,6 +708,20 @@ unsigned int FID_word(int Fdiv, int tile_ID) {
   //return(((RC_frequency_change_words[Fdiv][1])<<8)+0xf0);
 }
 
+// get voltage level by reading VCC
+int get_volt_level(int logicalDomain) {
+  int Vlevel,volt=-1, found=0;
+  
+  volt = getInt(readVCC(logicalDomain));
+
+  for (Vlevel=0; Vlevel<=RC_NUM_VOLTAGE_LEVELS; Vlevel++){
+    if (getInt(RC_V_MHz_cap[Vlevel].volt) == volt) {found=1; break;}
+  }
+  
+  if (found)  return(Vlevel);
+  else        return(-1);
+}
+
 // get the complete word from the CRB for tile clock frequency
 int get_divider(int tile_ID) {
   int step;
@@ -755,7 +784,7 @@ void SCCGetTimeAll(timespecSCC *t){
   t->tv_sec =  sec;
   t->tv_nsec = nsec;
 }
-
+  
 /*
  * Note that this will only last for about 232/106 =~ 4295 seconds, 
  * or roughly 71 minutes though (on a typical 32-bit system).

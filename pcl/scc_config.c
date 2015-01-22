@@ -74,13 +74,13 @@ void InitAPI(int printMessages) {
 // 
 void SetConfigBit(unsigned int ConfigAddr, int BitPos, int BitValue) {
   int Register = ReadConfigReg(ConfigAddr);
-  if (DEBUG) printf("RMW Read: %0x...\n", Register);
+  if (DEBUG_PRT_SCC) printf("RMW Read: %0x...\n", Register);
   if (BitValue) {
     Register = Register | (1<<BitPos);
   } else {
     Register = Register & ~(1<<BitPos);
   }
-  if (DEBUG) printf("RMW Write: %0x...\n", Register);
+  if (DEBUG_PRT_SCC) printf("RMW Write: %0x...\n", Register);
   SetConfigReg(ConfigAddr, Register);
 }
 

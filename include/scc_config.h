@@ -37,7 +37,7 @@ typedef volatile unsigned int         tVUINT32;
 // #########################################################################################
 */
 // En-/ or disable debug prints...
-#define DEBUG 0
+#define DEBUG_PRT_SCC 0
 /*
 // Define start address of pagetable (PAGE_DIR_BASE should be equal to or above to STACK_TOP setting 
 // in "../../bootcode/bootImage/defines.h" and needs to be 1025*4KB below the max private address) 

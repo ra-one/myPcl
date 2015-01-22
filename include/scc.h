@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <sys/time.h>
 
+#include <pthread.h>
+
 #include "scc_config.h"
 #include "debugging.h"
 
@@ -24,19 +26,18 @@
 
 #define SNETGLOBWAITVAL      6
 #define WAITWORKERSVAL       9
-#define SNETGLOBWAIT        (*((volatile int*)(firstMPB + 2))) // on MPB line 0
-#define WAITWORKERS         (*((volatile int*)(firstMPB + 34)))
-#define MALLOCADDR          (firstMPB + 66)
-#define OBADDR              (firstMPB + 98)
-#define OBSET               (*((volatile int*)(firstMPB + 130)))
-#define TIMEADDR            (firstMPB + 160)
+#define SNETGLOBWAIT        (*((volatile int*)(firstMPB + 34))) // on MPB line 0
+#define WAITWORKERS         (*((volatile int*)(firstMPB + 66)))
+#define MALLOCADDR          (firstMPB + 98)
+#define OBADDR              (firstMPB + 130)
+#define OBSET               (*((volatile int*)(firstMPB + 162)))
+#define TIMEADDR            (firstMPB + 194)
+#define MEM_FREE_LL         (firstMPB + 226)
 
-
-#define FREQFLAG            (*((volatile int*)(firstMPB + 194)))
-#define FREQPROP            (*((volatile double*)(firstMPB + 226)))
-#define DEMA                (*((volatile double*)(firstMPB + 258)))
-
-
+#define FREQFLAG            (*((volatile int*)(firstMPB + 258)))
+#define FREQPROP            (*((volatile double*)(firstMPB + 290)))
+#define DEMA                (*((volatile double*)(firstMPB + 322)))
+#define EMA                 (*((volatile double*)(firstMPB + 354)))
 
 /* Power defines */
 #define RC_MAX_FREQUENCY_DIVIDER     16  // maximum divider value, so lowest F
@@ -49,6 +50,18 @@ extern uintptr_t  *allMbox;
 
 extern t_vcharp firstMPB;
 extern t_vcharp locks[CORES];
+
+typedef struct block_t{
+  struct block_t *next;
+  size_t size;
+  int coreId;
+}block_t;
+
+typedef struct block_t_free{
+  block_t *list;
+}block_t_free;
+
+block_t_free *mem_free_arr; //array of linked list of memory to be freed
 
 /* Flush MPBT from L1. */
 static inline void INVMPBTL1() { __asm__ volatile ( ".byte 0x0f; .byte 0x0a;\n" );}
@@ -101,9 +114,7 @@ typedef struct {
   double output_rate;
   double volt;
   int freq;
-} observer_t;
-
-extern observer_t *obs;
+} observer_t_old;
 
 void set_min_freq();
 void change_freq(double prop,char c);
@@ -113,10 +124,12 @@ int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain);
 int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain);
 void startPowerMeasurement(int start);
 void powerMeasurement(FILE *fileHand);
+int get_volt_level(int logicalDomain);
 int isDvfsActive();
 
 typedef struct{
   unsigned long    tv_sec;    // seconds 
+  //unsigned long    tv_usec;    // microseconds
   unsigned long    tv_nsec;   // nanoseconds  
 }timespecSCC;
 
@@ -124,6 +137,30 @@ void SCCGetTimeAll(timespecSCC *t);
 double SCCGetTime();               /* sec  (seconds) */
 unsigned long long SCCGetTimMS(); 
 unsigned long long SCCGetTimNS(); 
+
+
+// allocate by source, access by sink
+typedef struct {
+	int change_mess; //change sleep after this number of messages generated
+	int change_percent; // change sleep by this much %
+	
+	int skip_update;    // skip update frequency by a number of output messages, should be >= window_size
+  int window_size;    // window of observing output messages
+  double thresh_hold;   //TODO: thresh_hold to change the freq
+  
+  int skip_count;     //count number of output
+  int startChange;	 // start changing freq and inp rate
+  
+  unsigned long *output_interval;  // window of output interval
+  int output_index;     // index in the window of observed output rate
+  timespecSCC last_output; // timestamp of last output
+
+  double input_rate;
+  double output_rate;
+  double volt;
+  int freq;
+} observer_t;
+
 
 /* Support Functions */
 void SCCInit();
@@ -146,6 +183,8 @@ void *SCCFirstMalloc(void);
 void *SCCMallocPtr(size_t size);
 void SCCFreePtr(void *p);
 int DCMflush();
+//call when you want to free blocks from LL
+void SCC_Free_Ptr_rpc_to_local(); 
 
 //#define _dbg_
 
