@@ -39,6 +39,13 @@
 #define DEMA                (*((volatile double*)(firstMPB + 322)))
 #define EMA                 (*((volatile double*)(firstMPB + 354)))
 
+/*
+#define 1ALPHAW              (*((volatile double*)(firstMPB + 386)))
+#define 1THW                 (*((volatile double*)(firstMPB + 418)))
+#define 1ALPHAOV             (*((volatile double*)(firstMPB + 450)))
+#define 1THOV                (*((volatile double*)(firstMPB + 482)))
+*/
+
 /* Power defines */
 #define RC_MAX_FREQUENCY_DIVIDER     16  // maximum divider value, so lowest F
 #define RC_MIN_FREQUENCY_DIVIDER     2   // minimum divider value, so highest F
@@ -90,11 +97,14 @@ int current_volt_level;
 int current_freq_div; 
 } dom_fv;
 
-extern int activeDomains[6];
-extern int RC_COREID[CORES];
-extern int DVFS;
+typedef struct{
+  unsigned long    tv_sec;    // seconds 
+  //unsigned long    tv_usec;    // microseconds
+  unsigned long    tv_nsec;   // nanoseconds  
+}timespecSCC;
 
-// allocate by source, access by sink
+// allocate by master, access by src/sink/master
+
 typedef struct {
 	int change_mess; //change sleep after this number of messages generated
 	int change_percent; // change sleep by this much %
@@ -106,19 +116,26 @@ typedef struct {
   int skip_count;     //count number of output
   int startChange;	 // start changing freq and inp rate
   
-  double *output_interval;  // window of output interval
   int output_index;     // index in the window of observed output rate
+  double *output_interval;  // window of output interval
   struct timeval last_output; // timestamp of last output
+  unsigned long *output_interval_scc;  // window of output interval
+  timespecSCC last_output_scc; // timestamp of last output
 
   double input_rate;
   double output_rate;
   double volt;
   int freq;
-} observer_t_old;
+} observer_t;
+
+extern int activeDomains[6];
+extern int RC_COREID[CORES];
+extern int DVFS;
+extern double ALPHAW,THW,ALPHAOV,THOV;
+extern observer_t *obs;
 
 void set_min_freq();
 void change_freq(double prop,char c);
-
 
 int set_frequency_divider(int Fdiv, int *new_Fdiv, int domain);
 int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain);
@@ -127,39 +144,10 @@ void powerMeasurement(FILE *fileHand);
 int get_volt_level(int logicalDomain);
 int isDvfsActive();
 
-typedef struct{
-  unsigned long    tv_sec;    // seconds 
-  //unsigned long    tv_usec;    // microseconds
-  unsigned long    tv_nsec;   // nanoseconds  
-}timespecSCC;
-
 void SCCGetTimeAll(timespecSCC *t);
 double SCCGetTime();               /* sec  (seconds) */
 unsigned long long SCCGetTimMS(); 
 unsigned long long SCCGetTimNS(); 
-
-
-// allocate by source, access by sink
-typedef struct {
-	int change_mess; //change sleep after this number of messages generated
-	int change_percent; // change sleep by this much %
-	
-	int skip_update;    // skip update frequency by a number of output messages, should be >= window_size
-  int window_size;    // window of observing output messages
-  double thresh_hold;   //TODO: thresh_hold to change the freq
-  
-  int skip_count;     //count number of output
-  int startChange;	 // start changing freq and inp rate
-  
-  unsigned long *output_interval;  // window of output interval
-  int output_index;     // index in the window of observed output rate
-  timespecSCC last_output; // timestamp of last output
-
-  double input_rate;
-  double output_rate;
-  double volt;
-  int freq;
-} observer_t;
 
 
 /* Support Functions */
@@ -221,3 +209,25 @@ static inline void unlock(int core) { *locks[core] = 0; }
 
 #endif /*SCC_H*/
 
+/*
+typedef struct {
+	int change_mess; //change sleep after this number of messages generated
+	int change_percent; // change sleep by this much %
+	
+	int skip_update;    // skip update frequency by a number of output messages, should be >= window_size
+  int window_size;    // window of observing output messages
+  double thresh_hold;   //TODO: thresh_hold to change the freq
+  
+  int skip_count;     //count number of output
+  int startChange;	 // start changing freq and inp rate
+  
+  unsigned long *output_interval;  // window of output interval
+  int output_index;     // index in the window of observed output rate
+  timespecSCC last_output; // timestamp of last output
+
+  double input_rate;
+  double output_rate;
+  double volt;
+  int freq;
+} observer_t;
+*/

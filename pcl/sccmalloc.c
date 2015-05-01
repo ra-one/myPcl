@@ -107,7 +107,18 @@ void *SCCMallocPtrGlobal(size_t size)
    void* ptr;
    lock(30);
    //printf("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f\n",size,gMemB,gMemKB,gMemMB);
-   assert(infoGlobal->memleft >= size);
+   //assert(infoGlobal->memleft >= size);
+
+   if(infoGlobal->memleft < size)
+   {
+     FILE *logFile = fopen("/shared/nil/Out/memError.log", "w");
+     fprintf(logFile, "Out of memory! %d\n",SCCGetNodeID());
+     fclose(logFile);
+     unlock(30);
+     SNETGLOBWAIT = SNETGLOBWAITVAL;
+     exit(-1);
+   }
+
    ptr = infoGlobal->freePtr;
    infoGlobal->freePtr += size;
    infoGlobal->memleft -= size;
@@ -156,6 +167,13 @@ void *SCCMallocPtr(size_t size)
   res = SCC_Malloc_Ptr(size);
   pthread_mutex_unlock(&malloc_lock);
 
+  if (res == NULL){
+    SCC_Free_Ptr_rpc_to_local();
+    pthread_mutex_lock(&malloc_lock);
+    res = SCC_Malloc_Ptr(size);
+    pthread_mutex_unlock(&malloc_lock);
+  }
+  
   if (res == NULL){
     block_t *ptr;
     if(size > (6*1024*1024)){
@@ -245,11 +263,14 @@ void SCC_Free_Ptr_rpc_to_local(){
   atomic_writeR(&atomic_inc_regs[CORES+myId],0);
     
   pthread_mutex_lock(&malloc_lock);
+  size_t frd=0;
   while(node != NULL){
     next = node->next;
+    frd += node->size;
     SCC_Free_Ptr((block_t*)node + 1);
     node = next;
   }
+  printf("Freed RPC_TO_LOCAL %zu\n",frd);
   pthread_mutex_unlock(&malloc_lock);
   PRT_FR_DBG(".\n");  
 }

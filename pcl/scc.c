@@ -17,7 +17,7 @@
 FILE *masterFile;
 FILE *logFile;
 long long int requestServiced = 0;
-static observer_t *obs = NULL;
+observer_t *obs = NULL;
 pthread_mutexattr_t attr;
 
 //used to write SHM start address into MPB
@@ -102,6 +102,7 @@ double startTime;
 //register for voltages
 int DVFS;
 int *C3v3SCC, *V3v3SCC;
+double ALPHAW,THW,ALPHAOV,THOV;
 
 int node_id = -1;  // physical location
 int node_rank = -1;  // logical location
@@ -255,6 +256,9 @@ void SCCInit(){
     OBSET = 9;
   } else {
     while(OBSET != 9);
+    memcpy((void*)&obs, (const void*)OBADDR, sizeof(observer_t*));
+    printf("Observer address worker: %p\n",obs);
+    
     memcpy((void*)&mem_free_arr, (const void*)MEM_FREE_LL, sizeof(block_t_free*));
     printf("mem_free_arr address worker: %p\n",mem_free_arr);
   }
@@ -363,12 +367,16 @@ void setSCCVars(){
   char *key = NULL;
   char *value;
   size_t len = 0;
-   
+
   fd = fopen ("/shared/nil/input.txt","r");
 
 	getline(&key, &len, fd); strtok_r(key, "=", &value); num_worker=atoi(value);
 	getline(&key, &len, fd); strtok_r(key, "=", &value); num_wrapper=atoi(value);
 	getline(&key, &len, fd); strtok_r(key, "=", &value); DVFS=atoi(value);
+  getline(&key, &len, fd); strtok_r(key, "=", &value); ALPHAW=atof(value);
+  getline(&key, &len, fd); strtok_r(key, "=", &value); THW=atof(value);
+  getline(&key, &len, fd); strtok_r(key, "=", &value); ALPHAOV=atof(value);
+  getline(&key, &len, fd); strtok_r(key, "=", &value); THOV=atof(value);
   getline(&key, &len, fd); strtok_r(key, "=", &hostFile); hostFile[strcspn ( hostFile, "\n" )] = '\0';
 
   num_cores = num_worker + num_wrapper;
@@ -491,6 +499,7 @@ void set_min_freq(){
 void change_freq(double prop, char c){
   if(!DVFS || !obs->startChange){
     fprintf(masterFile,"Frequency can not be changed, DVFS is disabled\n");
+    printf("Frequency can not be changed, DVFS is disabled\n");
     return;
   }
   
