@@ -105,7 +105,7 @@ void SCCMallocInit(uintptr_t *addr)
 void *SCCMallocPtrGlobal(size_t size)
 {
    void* ptr;
-   lock(30);
+   lock(mallocLCK);
    //printf("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f\n",size,gMemB,gMemKB,gMemMB);
    //assert(infoGlobal->memleft >= size);
 
@@ -114,7 +114,7 @@ void *SCCMallocPtrGlobal(size_t size)
      FILE *logFile = fopen("/shared/nil/Out/memError.log", "w");
      fprintf(logFile, "Out of memory! %d\n",SCCGetNodeID());
      fclose(logFile);
-     unlock(30);
+     unlock(mallocLCK);
      SNETGLOBWAIT = SNETGLOBWAITVAL;
      exit(-1);
    }
@@ -123,7 +123,7 @@ void *SCCMallocPtrGlobal(size_t size)
    infoGlobal->freePtr += size;
    infoGlobal->memleft -= size;
    NO_SCRIPT_DBG("sccMallocGlob size: %zu, mem left B:%zu, KB:%f, MB:%f, returned %p, \n", size, gMemB, gMemKB, gMemMB, ptr);
-   unlock(30);
+   unlock(mallocLCK);
    return ptr;  
 }
 

@@ -79,6 +79,7 @@ static int VCCADDRP[] = {0x8414,0x8418,0x8400,0x8404,0x8408,0x8410}; // 4 5 7 0 
 static int* VCCADDRV[6];
 static int PD[] = {4,5,7,0,1,3};
 static int changeVLT = 1;
+static int PMC = 1; //default map one page per MC in loop
 
 t_vintp fChange_vAddr[CORES/2];
 t_vintp RPC_virtual_address; // only one RPC on chip
@@ -372,6 +373,7 @@ void setSCCVars(){
 
 	getline(&key, &len, fd); strtok_r(key, "=", &value); num_worker=atoi(value);
 	getline(&key, &len, fd); strtok_r(key, "=", &value); num_wrapper=atoi(value);
+  getline(&key, &len, fd); strtok_r(key, "=", &value); PMC=atoi(value);
 	getline(&key, &len, fd); strtok_r(key, "=", &value); DVFS=atoi(value);
   getline(&key, &len, fd); strtok_r(key, "=", &value); ALPHAW=atof(value);
   getline(&key, &len, fd); strtok_r(key, "=", &value); THW=atof(value);
@@ -414,14 +416,14 @@ void remapLUT(int myCoreID) {
   }
 
   int idx=0,page=0;
-  //unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,29,30
-  unsigned int lutValArr[] = {6554,6595,307200,307241}; // values from core 16,17,30,31
+  unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,29,30
+  //unsigned int lutValArr[] = {6554,6595,307200,307241}; // values from core 16,17,30,31
   unsigned int value = lutValArr[idx];
 
   unsigned int lutSlot = START_PAGE, max = END_PAGE; // max mem is 944 M
 
   for(lutSlot; lutSlot<=max;lutSlot++){
-    if(page == 4) { // map four pages for each MC
+    if(page == PMC) { // map # pages for each MC
 			lutValArr[idx] = value; // update array with new value
 			page = 0; // set page to 0 again
 			idx = (idx+1)%4; // update idx between 0 - 3
@@ -1112,3 +1114,59 @@ void remapLUT1(int myCoreID) {
       // }
     // } 
 // */
+
+
+/*
+//Used latest
+void remapLUT(int myCoreID) {
+  // coreID is Z coordinate
+  int page_size, i,NCMDeviceFD;
+
+  t_vcharp     MappedAddr;
+  unsigned int result,alignedAddr, pageOffset, ConfigAddr;
+  unsigned int ConfigAddrLUT;
+  
+  page_size  = getpagesize(); // set page size
+  
+  if ((NCMDeviceFD=open("/dev/rckncm", O_RDWR|O_SYNC))<0) {
+    perror("open"); exit(-1);
+  }
+  
+  if(myCoreID==1){ 
+    ConfigAddrLUT = CRB_OWN+LUT1; 
+  } else { 
+    ConfigAddrLUT = CRB_OWN+LUT0; 
+  }
+
+  int idx=0,page=0;
+  //unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,29,30
+  unsigned int lutValArr[] = {6554,6595,307200,307241}; // values from core 16,17,30,31
+  unsigned int value = lutValArr[idx];
+
+  unsigned int lutSlot = START_PAGE, max = END_PAGE; // max mem is 944 M
+
+  for(lutSlot; lutSlot<=max;lutSlot++){
+    if(page == 4) { // map four pages for each MC
+			lutValArr[idx] = value; // update array with new value
+			page = 0; // set page to 0 again
+			idx = (idx+1)%4; // update idx between 0 - 3
+			value = lutValArr[idx]; // get next value from array
+	  }
+    
+    ConfigAddr = ConfigAddrLUT + (lutSlot*0x08);
+    alignedAddr = ConfigAddr & (~(page_size-1));
+    pageOffset  = ConfigAddr - alignedAddr;
+    
+    MappedAddr = (t_vcharp) mmap(NULL, page_size, PROT_WRITE|PROT_READ, MAP_SHARED, NCMDeviceFD, alignedAddr);
+    if (MappedAddr == MAP_FAILED) {
+      perror("mmap");exit(-1);
+    }
+    //printf("scc.c: lutSlot 0x%x (%d) oldEntry 0x%x (%d) ",lutSlot,lutSlot,*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    *(int*)(MappedAddr+pageOffset) = value;
+    value++;
+    page++;
+    //printf(" after edit: 0x%x (%d)\n",*((int*)(MappedAddr+pageOffset)),*((int*)(MappedAddr+pageOffset)));
+    munmap((void*)MappedAddr, page_size);
+  }
+}
+*/

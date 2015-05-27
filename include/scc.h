@@ -46,6 +46,14 @@
 #define 1THOV                (*((volatile double*)(firstMPB + 482)))
 */
 
+// 17 18 29 30 NORMAL
+// 16 17 30 31 PWR
+#define atomicLCK             17 // not used         
+#define mallocLCK             30
+#define freqLCK               18
+
+
+
 /* Power defines */
 #define RC_MAX_FREQUENCY_DIVIDER     16  // maximum divider value, so lowest F
 #define RC_MIN_FREQUENCY_DIVIDER     2   // minimum divider value, so highest F
