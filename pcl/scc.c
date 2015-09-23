@@ -416,8 +416,13 @@ void remapLUT(int myCoreID) {
   }
 
   int idx=0,page=0;
-  unsigned int lutValArr[] = {6595,45302,268493,307200}; // values from core 17,18,29,30
-  //unsigned int lutValArr[] = {6554,6595,307200,307241}; // values from core 16,17,30,31
+  unsigned int lutValArr[] = {6308,6349,6554,6595}; // 1MC 1 values from core 4,5,16,17
+  //unsigned int lutValArr[] = {268452,268493,268698,268739}; // 1MC 2 values from core 28,29,40,41
+  //unsigned int lutValArr[] = {45056,45097,45302,45343}; // 1MC 3 values from core 6,7,18,19
+  //unsigned int lutValArr[] = {307200,307241,307446,307487}; // 1MC 4 values from core 30,31,42,43
+  
+  //unsigned int lutValArr[] = {6595,45302,268493,307200}; // 4MC values from core 17,18,29,30
+  //unsigned int lutValArr[] = {6554,6595,307200,307241}; // 2MC values from core 16,17,30,31
   unsigned int value = lutValArr[idx];
 
   unsigned int lutSlot = START_PAGE, max = END_PAGE; // max mem is 944 M
@@ -615,7 +620,7 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
   // only change volts if its different then previous level
   changeVoltLvl = (RC_current_val[domain].current_volt_level != Vlevel);
   
-  fprintf(masterFile,"\nMaster: curr Vl %d req VL %d, !=  %d\n\n",RC_current_val[domain].current_volt_level,Vlevel,(RC_current_val[domain].current_volt_level != Vlevel));  
+  fprintf(masterFile,"\nMaster: curr VL %d req VL %d, !=  %d\n\n",RC_current_val[domain].current_volt_level,Vlevel,(RC_current_val[domain].current_volt_level != Vlevel));  
   
   // if new frequency divider greater than current (decrease freq), adjust frequency immediately;
   // this can always be done safely if the current power state is feasible
@@ -649,17 +654,19 @@ int set_freq_volt_level(int Fdiv, int *new_Fdiv, int *new_Vlevel, int domain) {
     //fflush(masterFile);
     volRead = readVCC(domain);
  
+    int volCounter=0;
     // read status register untill value reflects change
     do{
       //volRead = readStatus(VCCADDR[domain],0.0000251770);
       volRead = readVCC(domain);
-      printf("oldVolti %d, newVolti %d, volRead %d\n",oldVolti,newVolti,getInt(volRead));
+      //printf("oldVolti %d, newVolti %d, volRead %d\n",oldVolti,newVolti,getInt(volRead));
       usleep(100);
       if(newVolti > oldVolti)      { changed = newVolti <= getInt(volRead); } 
       else if(newVolti < oldVolti) { changed = newVolti >= getInt(volRead); }
       else if(newVolti == oldVolti){ changed = 1; }
+      volCounter++;
     }while(!changed);
-    fprintf(masterFile,"Volt int after change:  %f, %d\n",volRead,getInt(volRead));
+    fprintf(masterFile,"Volt int after change:  %f, %d, voltage Counter %d\n",volRead,getInt(volRead),volCounter);
     //fflush(masterFile);
   }
   RC_current_val[domain].current_volt_level = Vlevel;
@@ -704,7 +711,7 @@ int RC_voltage_level(int Fdiv) {
 
 // set frequency divider on a single tile 
 int RC_set_frequency_divider(int tile_ID, int Fdiv) {
-  if(tile_ID == 8 || tile_ID == 15) return 1; // used to create SHM
+  if(tile_ID == 2 || tile_ID == 8) return 1; // used to create SHM
   
   *(fChange_vAddr[tile_ID]) = FID_word(Fdiv, tile_ID);
   //fprintf(stderr,"FID_word 0x%x written for tile %02d\n",FID_word(Fdiv, tile_ID),tile_ID);

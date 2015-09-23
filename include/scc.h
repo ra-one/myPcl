@@ -46,11 +46,33 @@
 #define 1THOV                (*((volatile double*)(firstMPB + 482)))
 */
 
-// 17 18 29 30 NORMAL
-// 16 17 30 31 PWR
+
+// 4 5 16 17 1MC1
 #define atomicLCK             17 // not used         
-#define mallocLCK             30
-#define freqLCK               18
+#define mallocLCK             4
+#define freqLCK               5
+
+// 28 29 40 41 1MC2
+//#define atomicLCK             28 // not used         
+//#define mallocLCK             40
+//#define freqLCK               41
+
+// 6 7 18 19 1MC3
+//#define atomicLCK             19 // not used         
+//#define mallocLCK             6
+//#define freqLCK               7
+
+// 30 31 42 43 1MC4
+//#define atomicLCK             30 // not used         
+//#define mallocLCK             42
+//#define freqLCK               43
+
+
+// 17 18 29 30 NORMAL 4MC
+// 16 17 30 31 PWR 2MC
+//#define atomicLCK             17 // not used         
+//#define mallocLCK             30
+//#define freqLCK               18
 
 
 
